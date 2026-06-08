@@ -1,3 +1,4 @@
+# Location: unified_ai/postmortem/ingest.py
 import re
 from pathlib import Path
 
@@ -6,6 +7,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 
 from config import EMBED_MODEL, PM_CHUNK_LINES, PM_OVERLAP_LINES
+from router import normalize_path
 
 ERROR_PATTERNS = ["ERROR", "CRITICAL", "FATAL", "EXCEPTION", "TRACEBACK", "FAILURE", "FAILED"]
 
@@ -13,7 +15,6 @@ _embeddings = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
 
 
 def read_log(filepath: str) -> str:
-    from router import normalize_path
     path = normalize_path(filepath)
     return path.read_text(encoding="utf-8", errors="ignore")
 

@@ -1,3 +1,4 @@
+# Location: unified_ai/postmortem/nodes.py
 from langchain_groq import ChatGroq
 from langchain_community.vectorstores import FAISS
 
@@ -5,7 +6,7 @@ from config import PM_TOP_K
 
 
 def retrieve(store: FAISS, query: str) -> str:
-    docs = store.as_retriever(search_kwargs={"k": PM_TOP_K}).get_relevant_documents(query)
+    docs = store.as_retriever(search_kwargs={"k": PM_TOP_K}).invoke(query)
     return "\n\n".join([doc.page_content for doc in docs])
 
 

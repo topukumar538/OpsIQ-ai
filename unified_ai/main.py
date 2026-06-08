@@ -1,3 +1,4 @@
+# Location: unified_ai/main.py
 import sys
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -38,7 +39,7 @@ def main():
     print("Drop a .log file to run PostMortem analysis.")
     print("Commands: mem | quit\n")
 
-    llm = ChatGroq(api_key=GROQ_API_KEY, model=MODEL_NAME, temperature=TEMPERATURE) # pyright: ignore[reportArgumentType]
+    llm = ChatGroq(api_key=GROQ_API_KEY, model=MODEL_NAME, temperature=TEMPERATURE) # type: ignore
 
     # State
     mode          = CHAT

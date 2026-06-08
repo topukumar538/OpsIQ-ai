@@ -1,3 +1,4 @@
+# Location: unified_ai/modes/rag.py
 from pathlib import Path
 
 from langchain_groq import ChatGroq
@@ -7,7 +8,7 @@ from langchain_community.vectorstores import FAISS
 
 from config import RAG_TOKEN_LIMIT
 from router import normalize_path
-import ingest as doc_ingest
+import doc_ingest
 from router import normalize_path
 
 TEMPLATE = (
@@ -47,7 +48,6 @@ def format_context(docs) -> str:
 def load_file(filepath: str, store: FAISS | None) -> FAISS:
     # Build new store or merge into existing
     if store is None:
-        print(f"  Loading '{normalize_path(filepath).name}'...")
         store = doc_ingest.build_store(filepath)
         print(f"  Done. {store.index.ntotal} vectors in store.\n")
     else:
