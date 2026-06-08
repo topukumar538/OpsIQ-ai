@@ -2,16 +2,14 @@ import sys
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-from typing import Optional
+from typing import Any
 from langchain_groq import ChatGroq
-from langchain_community.vectorstores import FAISS
-from langchain.memory import ConversationSummaryBufferMemory
 
-from config import GROQ_API_KEY, MODEL_NAME
+from config import GROQ_API_KEY, MODEL_NAME, TEMPERATURE, TEMPERATURE
 from router import classify_input, normalize_path
-from modes import chat as chat_mode
-from modes import rag as rag_mode
-from modes import postmortem as pm_mode
+from models import chat as chat_mode
+from models import rag as rag_mode
+from models import postmortem as pm_mode
 from postmortem import ingest as pm_ingest
 from postmortem import graph as pm_graph
 from postmortem import report as pm_report
@@ -40,15 +38,16 @@ def main():
     print("Drop a .log file to run PostMortem analysis.")
     print("Commands: mem | quit\n")
 
-    llm = ChatGroq(api_key=GROQ_API_KEY, model=MODEL_NAME, temperature=0) # type: ignore
+    llm = ChatGroq(api_key=GROQ_API_KEY, model=MODEL_NAME, temperature=TEMPERATURE) # pyright: ignore[reportArgumentType]
 
     # State
     mode          = CHAT
     chat_memory   = chat_mode.build_memory(llm)
-    rag_store:  Optional[FAISS] = None
-    rag_memory: Optional[ConversationSummaryBufferMemory] = None
-    pm_store:   Optional[FAISS] = None
-    pm_memory:  Optional[ConversationSummaryBufferMemory] = None
+    rag_store:  Any = None
+    rag_memory: Any = None
+    pm_store:   Any = None
+    pm_memory:  Any = None
+    report_str: str = ""
 
     while True:
         try:
@@ -86,7 +85,7 @@ def main():
                 print("  [!] This session is locked to the current postmortem report.")
                 print("      Open a new session to analyze a different report.\n")
                 continue
-            answer = pm_mode.chat(user_input, pm_store, llm, pm_memory)  # type: ignore
+            answer = pm_mode.chat(user_input, report_str, pm_store, llm, pm_memory)
             print(f"\nAI: {answer}\n")
             continue
 
@@ -102,18 +101,18 @@ def main():
 
             print("  Running PostMortem pipeline...")
             print("  (log_analyzer and timeline_analyzer running in parallel)\n")
-            result = pm_graph.run(llm, pm_store, error_counts) # type: ignore
+            result = pm_graph.run(llm, pm_store, error_counts)
 
-            report_text = pm_report.build_report(result, log_name)
-            print(report_text)
+            report_str = pm_report.build_report(result, log_name)
+            print(report_str)
 
             # Switch to postmortem chat mode
             mode      = POSTMORTEM
-            pm_memory = pm_mode.build_memory(llm, report_text)
+            pm_memory = pm_mode.build_memory(llm)
 
             # Build a fresh FAISS store from the report for RAG
             print("  Indexing report for chat...")
-            pm_store = pm_mode.build_report_store(report_text)
+            pm_store = pm_mode.build_report_store(report_str)
             print(f"  {pm_store.index.ntotal} vectors ready.\n")
             print("  You can now ask questions about this report.")
             print("  This session is locked to this report.\n")
@@ -144,7 +143,7 @@ def main():
         if mode == CHAT:
             answer = chat_mode.chat(user_input, llm, chat_memory)
         elif mode == RAG:
-            answer = rag_mode.chat(user_input, rag_store, llm, rag_memory)  # type: ignore
+            answer = rag_mode.chat(user_input, rag_store, llm, rag_memory)
 
         print(f"\nAI: {answer}\n")
 

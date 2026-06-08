@@ -59,7 +59,7 @@ def build_store(raw_log: str, llm) -> tuple:
     print("  Generating log summary...")
     summary_response = llm.invoke(
         f"Summarize the following log file in 5-8 sentences. "
-        f"Focus on what services are involved, what went wrong, and the overall timeline.\n\n{raw_log[:4000]}"
+        f"Focus on what services are involved, what went wrong, and the overall timeline.\n\n{raw_log[:8000]}"
     )
     summary_doc = Document(
         page_content=f"Log summary:\n{summary_response.content}",

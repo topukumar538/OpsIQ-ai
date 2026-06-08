@@ -6,7 +6,9 @@ from langchain.prompts import PromptTemplate
 from langchain_community.vectorstores import FAISS
 
 from config import RAG_TOKEN_LIMIT
+from router import normalize_path
 import ingest as doc_ingest
+from router import normalize_path
 
 TEMPLATE = (
     "You are a document-aware AI assistant. Answer using the retrieved context. "
@@ -45,7 +47,7 @@ def format_context(docs) -> str:
 def load_file(filepath: str, store: FAISS | None) -> FAISS:
     # Build new store or merge into existing
     if store is None:
-        print(f"  Loading '{Path(doc_ingest.normalize_path(filepath)).name}'...")
+        print(f"  Loading '{normalize_path(filepath).name}'...")
         store = doc_ingest.build_store(filepath)
         print(f"  Done. {store.index.ntotal} vectors in store.\n")
     else:
@@ -56,7 +58,7 @@ def load_file(filepath: str, store: FAISS | None) -> FAISS:
 
 def chat(user_input: str, store: FAISS, llm: ChatGroq, memory: ConversationSummaryBufferMemory) -> str:
     history  = memory.load_memory_variables({})["history"]
-    docs     = doc_ingest.get_retriever(store).get_relevant_documents(user_input)
+    docs     = doc_ingest.get_retriever(store).invoke(user_input)
     context  = format_context(docs)
     response = llm.invoke(prompt.format(history=history, context=context, input=user_input))
     answer   = str(response.content)

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone, timezone
 
 
 def build_report(state: dict, log_filename: str) -> str:
@@ -10,7 +10,7 @@ def build_report(state: dict, log_filename: str) -> str:
     lines.append(f"\n{divider}")
     lines.append("  POSTMORTEM REPORT")
     lines.append(f"  File     : {log_filename}")
-    lines.append(f"  Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append(f"  Generated: {datetime.now(tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
     lines.append(divider)
 
     lines.append("\n[ ERRORS DETECTED ]")
