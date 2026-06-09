@@ -1,4 +1,4 @@
-# Location: unified_ai/modes/chat.py
+# Location: backend/modes/chat.py
 from langchain_groq import ChatGroq
 from langchain.memory import ConversationSummaryBufferMemory
 from langchain.prompts import PromptTemplate

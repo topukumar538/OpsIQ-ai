@@ -1,4 +1,4 @@
-# Location: unified_ai/modes/rag.py
+# Location: backend/modes/rag.py
 from pathlib import Path
 
 from langchain_groq import ChatGroq

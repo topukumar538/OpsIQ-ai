@@ -1,4 +1,4 @@
-# Location: unified_ai/config.py
+# Location: backend/config.py
 import os
 from dotenv import load_dotenv
 

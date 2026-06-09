@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OpsIQ</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    #messages { scroll-behavior: smooth; }
+    .message-enter { animation: fadeUp 0.2s ease; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .typing-dot { animation: blink 1.2s infinite; }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes blink {
+      0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; }
+    }
+    pre { white-space: pre-wrap; word-break: break-word; }
+    #drop-zone.drag-over { border-color: #6366f1; background: #1e1b4b; }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen flex flex-col">
+
+  <!-- Header -->
+  <header class="border-b border-gray-800 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-sm">AI</div>
+      <span class="font-semibold text-lg tracking-tight">OpsIQ</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <!-- Mode badge -->
+      <span id="mode-badge" class="px-3 py-1 rounded-full text-xs font-medium bg-gray-800 text-gray-400">
+        CHAT
+      </span>
+      <!-- Memory button -->
+      <button onclick="toggleMemory()" class="px-3 py-1 rounded-lg text-xs bg-gray-800 hover:bg-gray-700 text-gray-400 transition">
+        Memory
+      </button>
+      <!-- New session -->
+      <button onclick="newSession()" class="px-3 py-1 rounded-lg text-xs bg-gray-800 hover:bg-gray-700 text-gray-400 transition">
+        New Session
+      </button>
+    </div>
+  </header>
+
+  <div class="flex flex-1 overflow-hidden">
+
+    <!-- Sidebar (memory panel) -->
+    <aside id="memory-panel" class="hidden w-72 border-r border-gray-800 flex-col overflow-y-auto p-4 bg-gray-900">
+      <h2 class="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wider">Memory</h2>
+      <div id="memory-content" class="text-xs text-gray-400 space-y-2">
+        <p class="text-gray-600">No memory yet.</p>
+      </div>
+    </aside>
+
+    <!-- Main chat area -->
+    <main class="flex-1 flex flex-col overflow-hidden">
+
+      <!-- Messages -->
+      <div id="messages" class="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+        <!-- Welcome -->
+        <div class="flex justify-center">
+          <div class="text-center max-w-md">
+            <div class="w-12 h-12 rounded-2xl bg-indigo-600 mx-auto mb-4 flex items-center justify-center text-xl">🤖</div>
+            <p class="text-gray-300 font-medium mb-1">Welcome to OpsIQ</p>
+            <p class="text-gray-500 text-sm">Chat freely. Upload a PDF/DOCX/TXT to switch to RAG mode. Upload a .log file to run PostMortem analysis.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Report panel (shown after postmortem) -->
+      <div id="report-panel" class="hidden mx-4 mb-2 rounded-xl border border-indigo-500/30 bg-gray-900 overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-900">
+          <span class="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Postmortem Report</span>
+          <button onclick="toggleReport()" class="text-gray-500 hover:text-gray-300 text-xs">collapse ▲</button>
+        </div>
+        <pre id="report-content" class="p-4 text-xs text-gray-300 max-h-64 overflow-y-auto leading-relaxed"></pre>
+      </div>
+
+      <!-- Drop zone + Input -->
+      <div class="border-t border-gray-800 p-4">
+
+        <!-- File drop zone -->
+        <div id="drop-zone"
+             class="mb-3 border-2 border-dashed border-gray-700 rounded-xl p-3 text-center text-xs text-gray-500 cursor-pointer hover:border-gray-600 transition"
+             onclick="document.getElementById('file-input').click()"
+             ondragover="onDragOver(event)"
+             ondragleave="onDragLeave(event)"
+             ondrop="onDrop(event)">
+          <input type="file" id="file-input" class="hidden" accept=".pdf,.docx,.doc,.txt,.log" onchange="handleFileSelect(event)"/>
+          <span id="drop-label">📎 Drop or click to upload — PDF, DOCX, TXT, LOG</span>
+        </div>
+
+        <!-- Upload progress -->
+        <div id="upload-progress" class="hidden mb-3 text-xs text-indigo-400 bg-indigo-950/50 rounded-lg px-3 py-2"></div>
+
+        <!-- Text input -->
+        <div class="flex gap-2">
+          <textarea id="input"
+            rows="1"
+            placeholder="Type a message..."
+            class="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-indigo-500 resize-none transition"
+            onkeydown="handleKey(event)"
+            oninput="autoResize(this)"></textarea>
+          <button id="send-btn" onclick="sendMessage()"
+            class="px-5 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-sm font-medium transition disabled:opacity-40 disabled:cursor-not-allowed">
+            Send
+          </button>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+<script>
+const API = "http://localhost:8000";
+let sessionId = null;
+
+// ── Session ──────────────────────────────────────────────────────────────────
+
+async function initSession() {
+  const res  = await fetch(`${API}/session`, { method: "POST" });
+  const data = await res.json();
+  sessionId  = data.session_id;
+  console.log("Session:", sessionId);
+}
+
+function headers(extra = {}) {
+  return { "x-session-id": sessionId, ...extra };
+}
+
+async function newSession() {
+  if (!confirm("Start a new session? Current context will be lost.")) return;
+  await fetch(`${API}/session`, { method: "DELETE", headers: headers() });
+  sessionId = null;
+  document.getElementById("messages").innerHTML = "";
+  document.getElementById("report-panel").classList.add("hidden");
+  document.getElementById("report-content").textContent = "";
+  updateModeBadge("chat");
+  await initSession();
+  addSystemMessage("New session started.");
+}
+
+// ── Mode badge ────────────────────────────────────────────────────────────────
+
+const modeColors = {
+  chat:       "bg-gray-800 text-gray-400",
+  rag:        "bg-emerald-900/50 text-emerald-400",
+  postmortem: "bg-indigo-900/50 text-indigo-400",
+};
+
+function updateModeBadge(mode) {
+  const badge = document.getElementById("mode-badge");
+  badge.className = `px-3 py-1 rounded-full text-xs font-medium ${modeColors[mode] || modeColors.chat}`;
+  badge.textContent = mode.toUpperCase();
+}
+
+async function refreshMode() {
+  const res  = await fetch(`${API}/mode`, { headers: headers() });
+  const data = await res.json();
+  updateModeBadge(data.mode);
+}
+
+// ── Memory panel ──────────────────────────────────────────────────────────────
+
+let memoryVisible = false;
+
+async function toggleMemory() {
+  memoryVisible = !memoryVisible;
+  const panel = document.getElementById("memory-panel");
+  panel.classList.toggle("hidden", !memoryVisible);
+  panel.classList.toggle("flex", memoryVisible);
+  if (memoryVisible) await loadMemory();
+}
+
+async function loadMemory() {
+  const res   = await fetch(`${API}/memory`, { headers: headers() });
+  const data  = await res.json();
+  const el    = document.getElementById("memory-content");
+  let html    = "";
+  if (data.summary) {
+    html += `<div class="bg-gray-800 rounded-lg p-2 mb-2"><p class="text-indigo-400 font-medium mb-1">Summary</p><p>${data.summary}</p></div>`;
+  }
+  if (data.messages?.length) {
+    html += `<p class="text-gray-500 mb-1">Buffer (${data.messages.length} msgs)</p>`;
+    data.messages.forEach(m => {
+      const color = m.role === "human" ? "text-blue-400" : "text-green-400";
+      html += `<div class="mb-1"><span class="${color} font-medium">${m.role}: </span><span>${m.content}</span></div>`;
+    });
+  }
+  el.innerHTML = html || "<p class='text-gray-600'>No memory yet.</p>";
+}
+
+// ── Messages ──────────────────────────────────────────────────────────────────
+
+function addMessage(role, text = "") {
+  const msgs = document.getElementById("messages");
+
+  const wrapper = document.createElement("div");
+  wrapper.className = `flex message-enter ${role === "user" ? "justify-end" : "justify-start"}`;
+
+  const bubble = document.createElement("div");
+  bubble.className = role === "user"
+    ? "max-w-xl bg-indigo-600 text-white rounded-2xl rounded-br-sm px-4 py-3 text-sm"
+    : "max-w-xl bg-gray-800 text-gray-100 rounded-2xl rounded-bl-sm px-4 py-3 text-sm";
+
+  bubble.textContent = text;
+  wrapper.appendChild(bubble);
+  msgs.appendChild(wrapper);
+  msgs.scrollTop = msgs.scrollHeight;
+  return bubble;
+}
+
+function addSystemMessage(text) {
+  const msgs = document.getElementById("messages");
+  const el   = document.createElement("div");
+  el.className = "flex justify-center message-enter";
+  el.innerHTML = `<span class="text-xs text-gray-500 bg-gray-800 px-3 py-1 rounded-full">${text}</span>`;
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function addTypingIndicator() {
+  const msgs = document.getElementById("messages");
+  const wrapper = document.createElement("div");
+  wrapper.id = "typing";
+  wrapper.className = "flex justify-start message-enter";
+  wrapper.innerHTML = `
+    <div class="bg-gray-800 rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1 items-center">
+      <span class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full block"></span>
+      <span class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full block"></span>
+      <span class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full block"></span>
+    </div>`;
+  msgs.appendChild(wrapper);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function removeTypingIndicator() {
+  document.getElementById("typing")?.remove();
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+
+let isStreaming = false;
+
+async function sendMessage() {
+  const input = document.getElementById("input");
+  const msg   = input.value.trim();
+  if (!msg || isStreaming) return;
+
+  input.value = "";
+  autoResize(input);
+  addMessage("user", msg);
+  addTypingIndicator();
+  isStreaming = true;
+  setSendDisabled(true);
+
+  const res = await fetch(`${API}/chat`, {
+    method: "POST",
+    headers: { ...headers(), "Content-Type": "application/json" },
+    body: JSON.stringify({ message: msg }),
+  });
+
+  removeTypingIndicator();
+  const bubble = addMessage("ai", "");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const token = line.slice(6);
+      if (token === "[DONE]") break;
+      bubble.textContent += token;
+      document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
+    }
+  }
+
+  isStreaming = false;
+  setSendDisabled(false);
+  if (memoryVisible) await loadMemory();
+}
+
+function setSendDisabled(val) {
+  const btn = document.getElementById("send-btn");
+  btn.disabled = val;
+}
+
+function handleKey(e) {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function autoResize(el) {
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 160) + "px";
+}
+
+// ── File upload ───────────────────────────────────────────────────────────────
+
+function onDragOver(e) {
+  e.preventDefault();
+  document.getElementById("drop-zone").classList.add("drag-over");
+}
+function onDragLeave(e) {
+  document.getElementById("drop-zone").classList.remove("drag-over");
+}
+function onDrop(e) {
+  e.preventDefault();
+  document.getElementById("drop-zone").classList.remove("drag-over");
+  const file = e.dataTransfer.files[0];
+  if (file) uploadFile(file);
+}
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (file) uploadFile(file);
+  e.target.value = "";
+}
+
+async function uploadFile(file) {
+  const ext      = file.name.split(".").pop().toLowerCase();
+  const progress = document.getElementById("upload-progress");
+  const label    = document.getElementById("drop-label");
+
+  progress.classList.remove("hidden");
+  progress.textContent = `Uploading '${file.name}'...`;
+
+  const isLog = ext === "log";
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(`${API}/upload`, {
+    method: "POST",
+    headers: headers(),
+    body: formData,
+  });
+
+  if (isLog) {
+    // SSE stream for postmortem pipeline progress
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer    = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const raw = line.slice(6);
+        if (raw === "[DONE]") break;
+
+        try {
+          const evt = JSON.parse(raw);
+          if (evt.event === "progress") {
+            progress.textContent = `⚙ ${evt.text}`;
+          } else if (evt.event === "report") {
+            // Show report panel
+            document.getElementById("report-content").textContent = evt.text;
+            document.getElementById("report-panel").classList.remove("hidden");
+            addSystemMessage("Postmortem report generated. You can now ask questions.");
+          }
+        } catch {}
+      }
+    }
+
+    updateModeBadge("postmortem");
+    label.textContent = "🔒 Session locked to this report";
+    progress.classList.add("hidden");
+
+  } else {
+    // RAG file — regular JSON response
+    const data = await res.json();
+    progress.classList.add("hidden");
+
+    if (data.status === "error" || data.status === "locked") {
+      addSystemMessage(`⚠ ${data.message}`);
+    } else {
+      addSystemMessage(data.message);
+      await refreshMode();
+    }
+  }
+}
+
+function toggleReport() {
+  const pre = document.getElementById("report-content");
+  const btn = document.querySelector("#report-panel button");
+  if (pre.classList.toggle("hidden")) {
+    btn.textContent = "expand ▼";
+  } else {
+    btn.textContent = "collapse ▲";
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+initSession();
+</script>
+</body>
+</html>
