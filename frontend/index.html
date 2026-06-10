@@ -1,116 +1,575 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>OpsIQ</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
   <style>
-    body { font-family: 'Inter', sans-serif; }
-    #messages { scroll-behavior: smooth; }
-    .message-enter { animation: fadeUp 0.2s ease; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d0d0d;
+      --surface:   #1a1a1a;
+      --surface2:  #222222;
+      --border:    #2a2a2a;
+      --border2:   #333333;
+      --text:      #ececec;
+      --muted:     #888;
+      --faint:     #444;
+      --accent:    #7c6ff7;
+      --accent-h:  #6c5fe6;
+      --accent-bg: rgba(124,111,247,0.08);
+      --green:     #34d399;
+      --green-bg:  rgba(52,211,153,0.08);
+      --amber:     #fbbf24;
+      --amber-bg:  rgba(251,191,36,0.08);
+      --red:       #f87171;
+      --radius:    12px;
+      --radius-sm: 8px;
+    }
+
+    html, body { height: 100%; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Navbar ── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 56px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      z-index: 100;
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      font-size: 15px;
+      letter-spacing: -0.3px;
+    }
+
+    .nav-logo {
+      width: 30px; height: 30px;
+      border-radius: 8px;
+      background: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .nav-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .mode-badge {
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      transition: all 0.3s;
+    }
+
+    .mode-chat       { background: var(--surface2); color: var(--muted); border: 1px solid var(--border2); }
+    .mode-rag        { background: var(--green-bg); color: var(--green); border: 1px solid rgba(52,211,153,0.2); }
+    .mode-postmortem { background: var(--accent-bg); color: var(--accent); border: 1px solid rgba(124,111,247,0.2); }
+
+    .nav-btn {
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      font-weight: 500;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .nav-btn:hover { background: var(--border); color: var(--text); }
+
+    /* ── Layout ── */
+    .layout {
+      display: flex;
+      height: 100vh;
+      padding-top: 56px;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 0;
+      overflow: hidden;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      transition: width 0.25s ease;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    .sidebar.open { width: 280px; }
+
+    .sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--muted);
+    }
+
+    .sidebar-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+
+    .memory-summary {
+      background: var(--accent-bg);
+      border: 1px solid rgba(124,111,247,0.15);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      font-size: 12px;
+      color: var(--text);
+      line-height: 1.6;
+      margin-bottom: 10px;
+    }
+
+    .memory-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+
+    .memory-msg {
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .memory-msg:last-child { border-bottom: none; }
+    .memory-role-human { color: #60a5fa; font-weight: 500; }
+    .memory-role-ai    { color: var(--green); font-weight: 500; }
+
+    /* ── Main ── */
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Messages ── */
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 0;
+      scroll-behavior: smooth;
+    }
+
+    #messages::-webkit-scrollbar { width: 4px; }
+    #messages::-webkit-scrollbar-track { background: transparent; }
+    #messages::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+    .msg-row {
+      display: flex;
+      padding: 6px 20px;
+      gap: 12px;
+      max-width: 800px;
+      margin: 0 auto;
+      width: 100%;
+      animation: fadeUp 0.2s ease;
+    }
+
     @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(8px); }
+      from { opacity: 0; transform: translateY(6px); }
       to   { opacity: 1; transform: translateY(0); }
     }
-    .typing-dot { animation: blink 1.2s infinite; }
-    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
-    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
-    @keyframes blink {
-      0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; }
+
+    .msg-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 600;
+      margin-top: 2px;
     }
-    pre { white-space: pre-wrap; word-break: break-word; }
-    #drop-zone.drag-over { border-color: #6366f1; background: #1e1b4b; }
+
+    .avatar-user { background: var(--accent); color: #fff; }
+    .avatar-ai   { background: var(--surface2); border: 1px solid var(--border2); color: var(--muted); }
+
+    .msg-content {
+      flex: 1;
+      font-size: 14px;
+      line-height: 1.7;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .msg-name {
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .msg-name-user { color: var(--accent); }
+    .msg-name-ai   { color: var(--muted); }
+
+    /* Welcome */
+    .welcome {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 20px;
+      text-align: center;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+
+    .welcome-icon {
+      width: 52px; height: 52px;
+      border-radius: 14px;
+      background: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      margin-bottom: 18px;
+    }
+
+    .welcome h1 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      letter-spacing: -0.3px;
+    }
+
+    .welcome p {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+
+    .mode-pills {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .mode-pill {
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid var(--border2);
+      color: var(--muted);
+      background: var(--surface2);
+    }
+
+    /* System message */
+    .sys-msg {
+      display: flex;
+      justify-content: center;
+      padding: 8px 20px;
+      animation: fadeUp 0.2s ease;
+    }
+
+    .sys-msg span {
+      font-size: 12px;
+      color: var(--muted);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      padding: 4px 12px;
+      border-radius: 20px;
+    }
+
+    /* Typing dots */
+    .typing-row { padding: 6px 20px; max-width: 800px; margin: 0 auto; width: 100%; display: flex; gap: 12px; }
+    .typing-dots {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      padding: 10px 4px;
+    }
+    .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      animation: blink 1.2s infinite;
+    }
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes blink {
+      0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+      40%            { opacity: 1;   transform: scale(1); }
+    }
+
+    /* Report panel */
+    #report-panel {
+      display: none;
+      margin: 0 20px 8px;
+      border: 1px solid rgba(124,111,247,0.25);
+      border-radius: var(--radius);
+      overflow: hidden;
+      max-width: 800px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .report-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: var(--accent-bg);
+      border-bottom: 1px solid rgba(124,111,247,0.15);
+    }
+
+    .report-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--accent);
+    }
+
+    .report-toggle {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 12px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: color 0.15s;
+    }
+    .report-toggle:hover { color: var(--text); }
+
+    #report-content {
+      font-size: 12px;
+      color: var(--muted);
+      padding: 14px;
+      max-height: 220px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      line-height: 1.6;
+      background: var(--surface);
+    }
+
+    /* ── Bottom bar ── */
+    .bottom-bar {
+      position: relative;
+      padding: 12px 20px 16px;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    /* Upload progress */
+    #upload-progress {
+      display: none;
+      font-size: 12px;
+      color: var(--accent);
+      background: var(--accent-bg);
+      border: 1px solid rgba(124,111,247,0.15);
+      border-radius: var(--radius-sm);
+      padding: 8px 12px;
+      margin-bottom: 10px;
+      max-width: 760px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* Input row */
+    .input-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      max-width: 760px;
+      margin: 0 auto;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      transition: border-color 0.15s;
+    }
+    .input-row:focus-within { border-color: var(--accent); }
+
+    /* Upload button (arrow icon) */
+    .upload-btn {
+      width: 32px; height: 32px;
+      border-radius: var(--radius-sm);
+      background: none;
+      border: 1px solid var(--border2);
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all 0.15s;
+      font-size: 14px;
+    }
+    .upload-btn:hover { background: var(--surface2); color: var(--text); border-color: var(--border2); }
+
+    #text-input {
+      flex: 1;
+      background: none;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-size: 14px;
+      font-family: 'Inter', sans-serif;
+      resize: none;
+      max-height: 160px;
+      line-height: 1.6;
+      padding: 2px 0;
+    }
+    #text-input::placeholder { color: var(--faint); }
+
+    .send-btn {
+      width: 32px; height: 32px;
+      border-radius: var(--radius-sm);
+      background: var(--accent);
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all 0.15s;
+      font-size: 14px;
+    }
+    .send-btn:hover:not(:disabled) { background: var(--accent-h); }
+    .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .input-hint {
+      text-align: center;
+      font-size: 11px;
+      color: var(--faint);
+      margin-top: 8px;
+    }
+
+    /* drag over */
+    .input-row.drag-over { border-color: var(--accent); background: var(--accent-bg); }
   </style>
 </head>
-<body class="bg-gray-950 text-gray-100 min-h-screen flex flex-col">
+<body>
 
-  <!-- Header -->
-  <header class="border-b border-gray-800 px-6 py-4 flex items-center justify-between">
-    <div class="flex items-center gap-3">
-      <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-sm">AI</div>
-      <span class="font-semibold text-lg tracking-tight">OpsIQ</span>
+  <!-- Fixed Navbar -->
+  <nav>
+    <div class="nav-brand">
+      <div class="nav-logo">IQ</div>
+      OpsIQ
     </div>
-    <div class="flex items-center gap-3">
-      <!-- Mode badge -->
-      <span id="mode-badge" class="px-3 py-1 rounded-full text-xs font-medium bg-gray-800 text-gray-400">
-        CHAT
-      </span>
-      <!-- Memory button -->
-      <button onclick="toggleMemory()" class="px-3 py-1 rounded-lg text-xs bg-gray-800 hover:bg-gray-700 text-gray-400 transition">
-        Memory
-      </button>
-      <!-- New session -->
-      <button onclick="newSession()" class="px-3 py-1 rounded-lg text-xs bg-gray-800 hover:bg-gray-700 text-gray-400 transition">
-        New Session
-      </button>
+    <div class="nav-right">
+      <span id="mode-badge" class="mode-badge mode-chat">Chat</span>
+      <button class="nav-btn" onclick="toggleMemory()">Memory</button>
+      <button class="nav-btn" onclick="newSession()">New session</button>
     </div>
-  </header>
+  </nav>
 
-  <div class="flex flex-1 overflow-hidden">
+  <div class="layout">
 
-    <!-- Sidebar (memory panel) -->
-    <aside id="memory-panel" class="hidden w-72 border-r border-gray-800 flex-col overflow-y-auto p-4 bg-gray-900">
-      <h2 class="text-sm font-semibold text-gray-400 mb-3 uppercase tracking-wider">Memory</h2>
-      <div id="memory-content" class="text-xs text-gray-400 space-y-2">
-        <p class="text-gray-600">No memory yet.</p>
+    <!-- Memory sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">Memory</div>
+      <div class="sidebar-body" id="memory-content">
+        <p style="font-size:12px; color:var(--faint)">No memory yet.</p>
       </div>
     </aside>
 
-    <!-- Main chat area -->
-    <main class="flex-1 flex flex-col overflow-hidden">
+    <!-- Main -->
+    <main>
 
       <!-- Messages -->
-      <div id="messages" class="flex-1 overflow-y-auto px-4 py-6 space-y-4">
-        <!-- Welcome -->
-        <div class="flex justify-center">
-          <div class="text-center max-w-md">
-            <div class="w-12 h-12 rounded-2xl bg-indigo-600 mx-auto mb-4 flex items-center justify-center text-xl">🤖</div>
-            <p class="text-gray-300 font-medium mb-1">Welcome to OpsIQ</p>
-            <p class="text-gray-500 text-sm">Chat freely. Upload a PDF/DOCX/TXT to switch to RAG mode. Upload a .log file to run PostMortem analysis.</p>
+      <div id="messages">
+        <div class="welcome">
+          <div class="welcome-icon">⚡</div>
+          <h1>Welcome to OpsIQ</h1>
+          <p>Your intelligent ops assistant. Chat, query documents, or drop a log file to run a full postmortem analysis.</p>
+          <div class="mode-pills">
+            <span class="mode-pill">💬 Chat</span>
+            <span class="mode-pill">📄 RAG — PDF / DOCX / TXT</span>
+            <span class="mode-pill">🔍 PostMortem — LOG</span>
           </div>
         </div>
       </div>
 
-      <!-- Report panel (shown after postmortem) -->
-      <div id="report-panel" class="hidden mx-4 mb-2 rounded-xl border border-indigo-500/30 bg-gray-900 overflow-hidden">
-        <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-900">
-          <span class="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Postmortem Report</span>
-          <button onclick="toggleReport()" class="text-gray-500 hover:text-gray-300 text-xs">collapse ▲</button>
+      <!-- Postmortem report panel -->
+      <div id="report-panel">
+        <div class="report-header">
+          <span class="report-title">📋 Postmortem Report</span>
+          <button class="report-toggle" id="report-toggle-btn" onclick="toggleReport()">▲ collapse</button>
         </div>
-        <pre id="report-content" class="p-4 text-xs text-gray-300 max-h-64 overflow-y-auto leading-relaxed"></pre>
+        <pre id="report-content"></pre>
       </div>
 
-      <!-- Drop zone + Input -->
-      <div class="border-t border-gray-800 p-4">
+      <!-- Bottom bar (fixed) -->
+      <div class="bottom-bar"
+           ondragover="onDragOver(event)"
+           ondragleave="onDragLeave(event)"
+           ondrop="onDrop(event)">
 
-        <!-- File drop zone -->
-        <div id="drop-zone"
-             class="mb-3 border-2 border-dashed border-gray-700 rounded-xl p-3 text-center text-xs text-gray-500 cursor-pointer hover:border-gray-600 transition"
-             onclick="document.getElementById('file-input').click()"
-             ondragover="onDragOver(event)"
-             ondragleave="onDragLeave(event)"
-             ondrop="onDrop(event)">
-          <input type="file" id="file-input" class="hidden" accept=".pdf,.docx,.doc,.txt,.log" onchange="handleFileSelect(event)"/>
-          <span id="drop-label">📎 Drop or click to upload — PDF, DOCX, TXT, LOG</span>
-        </div>
+        <div id="upload-progress"></div>
 
-        <!-- Upload progress -->
-        <div id="upload-progress" class="hidden mb-3 text-xs text-indigo-400 bg-indigo-950/50 rounded-lg px-3 py-2"></div>
+        <div class="input-row" id="input-row">
+          <!-- Hidden file input -->
+          <input type="file" id="file-input" style="display:none"
+                 accept=".pdf,.docx,.doc,.txt,.log"
+                 onchange="handleFileSelect(event)"/>
 
-        <!-- Text input -->
-        <div class="flex gap-2">
-          <textarea id="input"
-            rows="1"
-            placeholder="Type a message..."
-            class="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-indigo-500 resize-none transition"
-            onkeydown="handleKey(event)"
-            oninput="autoResize(this)"></textarea>
-          <button id="send-btn" onclick="sendMessage()"
-            class="px-5 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-sm font-medium transition disabled:opacity-40 disabled:cursor-not-allowed">
-            Send
+          <!-- Upload arrow button -->
+          <button class="upload-btn" onclick="document.getElementById('file-input').click()" title="Upload file (PDF, DOCX, TXT, LOG)">
+            ↑
+          </button>
+
+          <!-- Text input -->
+          <textarea id="text-input" rows="1"
+                    placeholder="Message OpsIQ..."
+                    onkeydown="handleKey(event)"
+                    oninput="autoResize(this)"></textarea>
+
+          <!-- Send button -->
+          <button class="send-btn" id="send-btn" onclick="sendMessage()" title="Send">
+            ↑
           </button>
         </div>
+
+        <p class="input-hint">↑ to upload · Enter to send · Shift+Enter for new line</p>
       </div>
 
     </main>
@@ -119,165 +578,180 @@
 <script>
 const API = "http://localhost:8000";
 let sessionId = null;
-
-// ── Session ──────────────────────────────────────────────────────────────────
+let memoryOpen = false;
+let isStreaming = false;
 
 async function initSession() {
-  const res  = await fetch(`${API}/session`, { method: "POST" });
-  const data = await res.json();
-  sessionId  = data.session_id;
-  console.log("Session:", sessionId);
+  const res = await fetch(`${API}/session`, { method: "POST" });
+  const d   = await res.json();
+  sessionId = d.session_id;
 }
 
-function headers(extra = {}) {
+function h(extra = {}) {
   return { "x-session-id": sessionId, ...extra };
 }
 
 async function newSession() {
   if (!confirm("Start a new session? Current context will be lost.")) return;
-  await fetch(`${API}/session`, { method: "DELETE", headers: headers() });
+  await fetch(`${API}/session`, { method: "DELETE", headers: h() });
   sessionId = null;
-  document.getElementById("messages").innerHTML = "";
-  document.getElementById("report-panel").classList.add("hidden");
+  document.getElementById("messages").innerHTML = buildWelcome();
+  document.getElementById("report-panel").style.display = "none";
   document.getElementById("report-content").textContent = "";
-  updateModeBadge("chat");
+  setMode("chat");
+  document.getElementById("file-input").value = "";
   await initSession();
-  addSystemMessage("New session started.");
+  sysMsg("New session started.");
 }
 
-// ── Mode badge ────────────────────────────────────────────────────────────────
+function buildWelcome() {
+  return `<div class="welcome">
+    <div class="welcome-icon">⚡</div>
+    <h1>Welcome to OpsIQ</h1>
+    <p>Your intelligent ops assistant. Chat, query documents, or drop a log file to run a full postmortem analysis.</p>
+    <div class="mode-pills">
+      <span class="mode-pill">💬 Chat</span>
+      <span class="mode-pill">📄 RAG — PDF / DOCX / TXT</span>
+      <span class="mode-pill">🔍 PostMortem — LOG</span>
+    </div>
+  </div>`;
+}
 
-const modeColors = {
-  chat:       "bg-gray-800 text-gray-400",
-  rag:        "bg-emerald-900/50 text-emerald-400",
-  postmortem: "bg-indigo-900/50 text-indigo-400",
-};
-
-function updateModeBadge(mode) {
+/* ── Mode ── */
+function setMode(mode) {
   const badge = document.getElementById("mode-badge");
-  badge.className = `px-3 py-1 rounded-full text-xs font-medium ${modeColors[mode] || modeColors.chat}`;
-  badge.textContent = mode.toUpperCase();
+  const labels = { chat: "Chat", rag: "RAG", postmortem: "PostMortem" };
+  badge.className = `mode-badge mode-${mode}`;
+  badge.textContent = labels[mode] || mode;
 }
 
 async function refreshMode() {
-  const res  = await fetch(`${API}/mode`, { headers: headers() });
-  const data = await res.json();
-  updateModeBadge(data.mode);
+  const res = await fetch(`${API}/mode`, { headers: h() });
+  const d   = await res.json();
+  setMode(d.mode);
 }
 
-// ── Memory panel ──────────────────────────────────────────────────────────────
-
-let memoryVisible = false;
-
+/* ── Memory ── */
 async function toggleMemory() {
-  memoryVisible = !memoryVisible;
-  const panel = document.getElementById("memory-panel");
-  panel.classList.toggle("hidden", !memoryVisible);
-  panel.classList.toggle("flex", memoryVisible);
-  if (memoryVisible) await loadMemory();
+  memoryOpen = !memoryOpen;
+  document.getElementById("sidebar").classList.toggle("open", memoryOpen);
+  if (memoryOpen) await loadMemory();
 }
 
 async function loadMemory() {
-  const res   = await fetch(`${API}/memory`, { headers: headers() });
-  const data  = await res.json();
-  const el    = document.getElementById("memory-content");
-  let html    = "";
-  if (data.summary) {
-    html += `<div class="bg-gray-800 rounded-lg p-2 mb-2"><p class="text-indigo-400 font-medium mb-1">Summary</p><p>${data.summary}</p></div>`;
+  const res = await fetch(`${API}/memory`, { headers: h() });
+  const d   = await res.json();
+  const el  = document.getElementById("memory-content");
+  let html  = "";
+
+  if (d.summary) {
+    html += `<div class="memory-summary"><div class="memory-label">Summary</div>${d.summary}</div>`;
   }
-  if (data.messages?.length) {
-    html += `<p class="text-gray-500 mb-1">Buffer (${data.messages.length} msgs)</p>`;
-    data.messages.forEach(m => {
-      const color = m.role === "human" ? "text-blue-400" : "text-green-400";
-      html += `<div class="mb-1"><span class="${color} font-medium">${m.role}: </span><span>${m.content}</span></div>`;
+  if (d.messages?.length) {
+    html += `<div class="memory-label" style="margin-bottom:8px">Buffer · ${d.messages.length} messages</div>`;
+    d.messages.forEach(m => {
+      const cls = m.role === "human" ? "memory-role-human" : "memory-role-ai";
+      const label = m.role === "human" ? "You" : "AI";
+      html += `<div class="memory-msg"><span class="${cls}">${label}</span><br/>${m.content}</div>`;
     });
   }
-  el.innerHTML = html || "<p class='text-gray-600'>No memory yet.</p>";
+  el.innerHTML = html || `<p style="font-size:12px; color:var(--faint)">No memory yet.</p>`;
 }
 
-// ── Messages ──────────────────────────────────────────────────────────────────
-
-function addMessage(role, text = "") {
+/* ── Messages ── */
+function addMsg(role, text = "") {
   const msgs = document.getElementById("messages");
+  const row  = document.createElement("div");
+  row.className = "msg-row";
 
-  const wrapper = document.createElement("div");
-  wrapper.className = `flex message-enter ${role === "user" ? "justify-end" : "justify-start"}`;
+  const avatar = document.createElement("div");
+  avatar.className = `msg-avatar ${role === "user" ? "avatar-user" : "avatar-ai"}`;
+  avatar.textContent = role === "user" ? "U" : "AI";
 
-  const bubble = document.createElement("div");
-  bubble.className = role === "user"
-    ? "max-w-xl bg-indigo-600 text-white rounded-2xl rounded-br-sm px-4 py-3 text-sm"
-    : "max-w-xl bg-gray-800 text-gray-100 rounded-2xl rounded-bl-sm px-4 py-3 text-sm";
+  const body = document.createElement("div");
+  body.className = "msg-content";
 
-  bubble.textContent = text;
-  wrapper.appendChild(bubble);
-  msgs.appendChild(wrapper);
+  const name = document.createElement("div");
+  name.className = `msg-name ${role === "user" ? "msg-name-user" : "msg-name-ai"}`;
+  name.textContent = role === "user" ? "You" : "OpsIQ";
+
+  const txt = document.createElement("div");
+  txt.textContent = text;
+
+  body.appendChild(name);
+  body.appendChild(txt);
+  row.appendChild(avatar);
+  row.appendChild(body);
+  msgs.appendChild(row);
   msgs.scrollTop = msgs.scrollHeight;
-  return bubble;
+  return txt;
 }
 
-function addSystemMessage(text) {
+function sysMsg(text) {
   const msgs = document.getElementById("messages");
   const el   = document.createElement("div");
-  el.className = "flex justify-center message-enter";
-  el.innerHTML = `<span class="text-xs text-gray-500 bg-gray-800 px-3 py-1 rounded-full">${text}</span>`;
+  el.className = "sys-msg";
+  el.innerHTML = `<span>${text}</span>`;
   msgs.appendChild(el);
   msgs.scrollTop = msgs.scrollHeight;
 }
 
-function addTypingIndicator() {
+function addTyping() {
   const msgs = document.getElementById("messages");
-  const wrapper = document.createElement("div");
-  wrapper.id = "typing";
-  wrapper.className = "flex justify-start message-enter";
-  wrapper.innerHTML = `
-    <div class="bg-gray-800 rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1 items-center">
-      <span class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full block"></span>
-      <span class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full block"></span>
-      <span class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full block"></span>
-    </div>`;
-  msgs.appendChild(wrapper);
+  const row  = document.createElement("div");
+  row.className = "typing-row";
+  row.id = "typing";
+
+  const avatar = document.createElement("div");
+  avatar.className = "msg-avatar avatar-ai";
+  avatar.textContent = "AI";
+
+  const dots = document.createElement("div");
+  dots.className = "typing-dots";
+  dots.innerHTML = `<div class="dot"></div><div class="dot"></div><div class="dot"></div>`;
+
+  row.appendChild(avatar);
+  row.appendChild(dots);
+  msgs.appendChild(row);
   msgs.scrollTop = msgs.scrollHeight;
 }
 
-function removeTypingIndicator() {
+function removeTyping() {
   document.getElementById("typing")?.remove();
 }
 
-// ── Chat ──────────────────────────────────────────────────────────────────────
-
-let isStreaming = false;
-
+/* ── Chat ── */
 async function sendMessage() {
-  const input = document.getElementById("input");
+  const input = document.getElementById("text-input");
   const msg   = input.value.trim();
   if (!msg || isStreaming) return;
 
   input.value = "";
   autoResize(input);
-  addMessage("user", msg);
-  addTypingIndicator();
+  addMsg("user", msg);
+  addTyping();
   isStreaming = true;
-  setSendDisabled(true);
+  document.getElementById("send-btn").disabled = true;
 
   const res = await fetch(`${API}/chat`, {
     method: "POST",
-    headers: { ...headers(), "Content-Type": "application/json" },
+    headers: { ...h(), "Content-Type": "application/json" },
     body: JSON.stringify({ message: msg }),
   });
 
-  removeTypingIndicator();
-  const bubble = addMessage("ai", "");
+  removeTyping();
+  const bubble = addMsg("ai", "");
 
-  const reader = res.body.getReader();
+  const reader  = res.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = "";
+  let buf = "";
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop();
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop();
     for (const line of lines) {
       if (!line.startsWith("data: ")) continue;
       const token = line.slice(6);
@@ -288,20 +762,12 @@ async function sendMessage() {
   }
 
   isStreaming = false;
-  setSendDisabled(false);
-  if (memoryVisible) await loadMemory();
-}
-
-function setSendDisabled(val) {
-  const btn = document.getElementById("send-btn");
-  btn.disabled = val;
+  document.getElementById("send-btn").disabled = false;
+  if (memoryOpen) await loadMemory();
 }
 
 function handleKey(e) {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 }
 
 function autoResize(el) {
@@ -309,18 +775,17 @@ function autoResize(el) {
   el.style.height = Math.min(el.scrollHeight, 160) + "px";
 }
 
-// ── File upload ───────────────────────────────────────────────────────────────
-
+/* ── File upload ── */
 function onDragOver(e) {
   e.preventDefault();
-  document.getElementById("drop-zone").classList.add("drag-over");
+  document.getElementById("input-row").classList.add("drag-over");
 }
-function onDragLeave(e) {
-  document.getElementById("drop-zone").classList.remove("drag-over");
+function onDragLeave() {
+  document.getElementById("input-row").classList.remove("drag-over");
 }
 function onDrop(e) {
   e.preventDefault();
-  document.getElementById("drop-zone").classList.remove("drag-over");
+  document.getElementById("input-row").classList.remove("drag-over");
   const file = e.dataTransfer.files[0];
   if (file) uploadFile(file);
 }
@@ -333,82 +798,66 @@ function handleFileSelect(e) {
 async function uploadFile(file) {
   const ext      = file.name.split(".").pop().toLowerCase();
   const progress = document.getElementById("upload-progress");
-  const label    = document.getElementById("drop-label");
 
-  progress.classList.remove("hidden");
-  progress.textContent = `Uploading '${file.name}'...`;
+  progress.style.display = "block";
+  progress.textContent   = `Uploading '${file.name}'...`;
 
-  const isLog = ext === "log";
   const formData = new FormData();
   formData.append("file", file);
 
-  const res = await fetch(`${API}/upload`, {
-    method: "POST",
-    headers: headers(),
-    body: formData,
-  });
+  const res = await fetch(`${API}/upload`, { method: "POST", headers: h(), body: formData });
 
-  if (isLog) {
-    // SSE stream for postmortem pipeline progress
+  if (ext === "log") {
     const reader  = res.body.getReader();
     const decoder = new TextDecoder();
-    let buffer    = "";
+    let buf = "";
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop();
-
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop();
       for (const line of lines) {
         if (!line.startsWith("data: ")) continue;
         const raw = line.slice(6);
         if (raw === "[DONE]") break;
-
         try {
           const evt = JSON.parse(raw);
           if (evt.event === "progress") {
-            progress.textContent = `⚙ ${evt.text}`;
+            progress.textContent = `⚙  ${evt.text}`;
           } else if (evt.event === "report") {
-            // Show report panel
             document.getElementById("report-content").textContent = evt.text;
-            document.getElementById("report-panel").classList.remove("hidden");
-            addSystemMessage("Postmortem report generated. You can now ask questions.");
+            document.getElementById("report-panel").style.display = "block";
+            sysMsg("Postmortem report ready. Ask anything about the incident.");
           }
         } catch {}
       }
     }
 
-    updateModeBadge("postmortem");
-    label.textContent = "🔒 Session locked to this report";
-    progress.classList.add("hidden");
+    setMode("postmortem");
+    progress.style.display = "none";
 
   } else {
-    // RAG file — regular JSON response
     const data = await res.json();
-    progress.classList.add("hidden");
-
+    progress.style.display = "none";
     if (data.status === "error" || data.status === "locked") {
-      addSystemMessage(`⚠ ${data.message}`);
+      sysMsg(`⚠ ${data.message}`);
     } else {
-      addSystemMessage(data.message);
+      sysMsg(data.message);
       await refreshMode();
     }
   }
 }
 
+/* ── Report panel ── */
 function toggleReport() {
-  const pre = document.getElementById("report-content");
-  const btn = document.querySelector("#report-panel button");
-  if (pre.classList.toggle("hidden")) {
-    btn.textContent = "expand ▼";
-  } else {
-    btn.textContent = "collapse ▲";
-  }
+  const content = document.getElementById("report-content");
+  const btn     = document.getElementById("report-toggle-btn");
+  const hidden  = content.style.display === "none";
+  content.style.display = hidden ? "block" : "none";
+  btn.textContent = hidden ? "▲ collapse" : "▼ expand";
 }
-
-// ── Init ──────────────────────────────────────────────────────────────────────
 
 initSession();
 </script>

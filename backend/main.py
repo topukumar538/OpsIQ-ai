@@ -9,7 +9,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from fastapi import FastAPI, UploadFile, File, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from langchain_groq import ChatGroq
@@ -25,6 +25,11 @@ import postmortem.graph as pm_graph
 import postmortem.report as pm_report
 
 app = FastAPI(title="OpsIQ")
+
+@app.get("/")
+def root():
+    return FileResponse("../frontend/index.html")
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -126,7 +131,7 @@ async def chat(req: ChatRequest, x_session_id: str = Header(...)):
         async def _stream():
             full = ""
             async for chunk in llm.astream(filled):
-                token = chunk.content
+                token = str(chunk.content)
                 if token:
                     full += token
                     yield f"data: {token}\n\n"
@@ -148,7 +153,7 @@ async def chat(req: ChatRequest, x_session_id: str = Header(...)):
         async def _stream():
             full = ""
             async for chunk in llm.astream(filled):
-                token = chunk.content
+                token = str(chunk.content)
                 if token:
                     full += token
                     yield f"data: {token}\n\n"
@@ -166,7 +171,7 @@ async def chat(req: ChatRequest, x_session_id: str = Header(...)):
         async def _stream():
             full = ""
             async for chunk in llm.astream(filled):
-                token = chunk.content
+                token = str(chunk.content)
                 if token:
                     full += token
                     yield f"data: {token}\n\n"
@@ -185,8 +190,10 @@ async def upload(file: UploadFile = File(...), x_session_id: str = Header(...)):
         state.chat_memory = chat_mode.build_memory(llm)
 
     # Save upload to temp file
-    suffix   = Path(file.filename).suffix.lower()
+    fname    = file.filename or 'upload'
+    suffix   = Path(fname).suffix.lower()
     tmp_path = Path(f"/tmp/{uuid.uuid4()}{suffix}")
+    log_name = fname
     tmp_path.write_bytes(await file.read())
 
     kind = classify_input(str(tmp_path))
@@ -214,7 +221,7 @@ async def upload(file: UploadFile = File(...), x_session_id: str = Header(...)):
 
             yield "data: {\"event\":\"progress\",\"text\":\"Running postmortem pipeline (parallel nodes)...\"}\n\n"
             result     = pm_graph.run(llm, store, error_counts)
-            report_str = pm_report.build_report(result, file.filename)
+            report_str = pm_report.build_report(result, log_name)
 
             yield f"data: {{\"event\":\"progress\",\"text\":\"Indexing report...\"}}\n\n"
             pm_store = pm_mode.build_report_store(report_str)
@@ -245,7 +252,7 @@ async def upload(file: UploadFile = File(...), x_session_id: str = Header(...)):
             tmp_path.unlink(missing_ok=True)
             return {
                 "status": "switched",
-                "message": f"RAG mode activated. {state.rag_store.index.ntotal} vectors loaded from '{file.filename}'."
+                "message": f"RAG mode activated. {state.rag_store.index.ntotal} vectors loaded from '{log_name}'."
             }
         elif state.mode == RAG:
             # Additional doc — merge
@@ -254,7 +261,7 @@ async def upload(file: UploadFile = File(...), x_session_id: str = Header(...)):
             tmp_path.unlink(missing_ok=True)
             return {
                 "status": "merged",
-                "message": f"'{file.filename}' added. Store now has {state.rag_store.index.ntotal} vectors."
+                "message": f"'{log_name}' added. Store now has {state.rag_store.index.ntotal} vectors."
             }
 
     return {"status": "error", "message": "Unknown file type."}
