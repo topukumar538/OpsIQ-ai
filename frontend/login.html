@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OpsIQ — Sign in</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg        : #0a0a0a;
+      --surface   : #141414;
+      --surface2  : #1e1e1e;
+      --surface3  : #252525;
+      --border    : #2a2a2a;
+      --border2   : #333;
+      --text      : #f0f0f0;
+      --muted     : #888;
+      --faint     : #444;
+      --accent    : #7c6ff7;
+      --accent2   : #6358e8;
+      --accent-bg : rgba(124,111,247,0.08);
+      --accent-glow: rgba(124,111,247,0.18);
+      --green     : #4ade80;
+      --red       : #f87171;
+      --mono      : 'JetBrains Mono', monospace;
+    }
+
+    html, body {
+      height: 100%; background: var(--bg); color: var(--text);
+      font-family: 'Inter', sans-serif; overflow: hidden;
+    }
+
+    /* ── Layout ── */
+    .shell {
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      height: 100vh;
+    }
+
+    /* ── Left panel — ambient ops console ── */
+    .left {
+      position: relative;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      justify-content: flex-end;
+      padding: 48px;
+      overflow: hidden;
+    }
+
+    /* scanline texture */
+    .left::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.08) 2px,
+        rgba(0,0,0,0.08) 4px
+      );
+      pointer-events: none; z-index: 1;
+    }
+
+    /* accent glow top-left */
+    .left::after {
+      content: '';
+      position: absolute; top: -120px; left: -80px;
+      width: 420px; height: 420px;
+      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+      pointer-events: none; z-index: 0;
+    }
+
+    .console-log {
+      position: absolute; inset: 0;
+      padding: 32px 40px;
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.9;
+      color: var(--faint);
+      overflow: hidden;
+      z-index: 2;
+      user-select: none;
+    }
+
+    .log-line { opacity: 0; animation: logfade 0.4s ease forwards; }
+    .log-line.ok   { color: #3a5c3a; }
+    .log-line.warn { color: #5c4a1a; }
+    .log-line.err  { color: #5c2a2a; }
+    .log-line.info { color: #2a3a5c; }
+
+    @keyframes logfade {
+      from { opacity: 0; transform: translateX(-6px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    .left-bottom { position: relative; z-index: 3; }
+
+    .left-logo {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 28px;
+    }
+    .logo-mark {
+      width: 40px; height: 40px; border-radius: 10px;
+      background: var(--accent); display: flex; align-items: center;
+      justify-content: center; font-size: 14px; font-weight: 700; color: #fff;
+    }
+    .logo-name {
+      font-size: 18px; font-weight: 600; letter-spacing: -0.3px;
+    }
+    .logo-sub {
+      font-family: var(--mono); font-size: 10px; color: var(--muted);
+      letter-spacing: 0.5px; margin-top: 2px;
+    }
+
+    .left-tagline {
+      font-size: 22px; font-weight: 600; line-height: 1.45;
+      letter-spacing: -0.4px; margin-bottom: 16px;
+    }
+    .left-tagline em {
+      font-style: normal; color: var(--accent);
+    }
+
+    .left-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .lchip {
+      font-family: var(--mono); font-size: 10px; padding: 3px 10px;
+      border-radius: 4px; border: 1px solid var(--border2);
+      color: var(--muted); background: var(--surface2);
+    }
+
+    /* ── Right panel — form ── */
+    .right {
+      display: flex; flex-direction: column;
+      justify-content: center; align-items: center;
+      padding: 48px 40px;
+      background: var(--bg);
+      overflow-y: auto;
+    }
+
+    .form-wrap { width: 100%; max-width: 340px; }
+
+    .form-head { margin-bottom: 32px; }
+    .form-head h1 {
+      font-size: 22px; font-weight: 600; letter-spacing: -0.3px;
+      margin-bottom: 6px;
+    }
+    .form-head p { font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+    /* fields */
+    .field { margin-bottom: 16px; }
+    .field label {
+      display: block; font-size: 12px; font-weight: 500;
+      color: var(--muted); margin-bottom: 6px; letter-spacing: 0.2px;
+    }
+    .field input {
+      width: 100%; padding: 10px 13px;
+      background: var(--surface); border: 1px solid var(--border2);
+      border-radius: 9px; color: var(--text);
+      font-size: 14px; font-family: 'Inter', sans-serif;
+      outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .field input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(124,111,247,0.12);
+    }
+    .field input::placeholder { color: var(--faint); }
+    .field input.err { border-color: var(--red); }
+
+    .field-err {
+      font-size: 11px; color: var(--red); margin-top: 5px;
+      display: none;
+    }
+    .field-err.show { display: block; }
+
+    /* submit */
+    .btn-submit {
+      width: 100%; padding: 11px;
+      background: var(--accent); border: none; border-radius: 9px;
+      color: #fff; font-size: 14px; font-weight: 600;
+      font-family: 'Inter', sans-serif; cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+      margin-top: 6px; letter-spacing: -0.1px;
+    }
+    .btn-submit:hover:not(:disabled) { background: var(--accent2); }
+    .btn-submit:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* global error banner */
+    #form-error {
+      display: none; margin-bottom: 16px;
+      background: rgba(248,113,113,0.08);
+      border: 1px solid rgba(248,113,113,0.2);
+      border-radius: 8px; padding: 9px 13px;
+      font-size: 12px; color: var(--red); line-height: 1.5;
+    }
+    #form-error.show { display: block; }
+
+    /* success */
+    #form-success {
+      display: none; margin-bottom: 16px;
+      background: rgba(74,222,128,0.06);
+      border: 1px solid rgba(74,222,128,0.18);
+      border-radius: 8px; padding: 9px 13px;
+      font-size: 12px; color: var(--green); line-height: 1.5;
+    }
+    #form-success.show { display: block; }
+
+    .divider {
+      display: flex; align-items: center; gap: 10px;
+      margin: 20px 0; color: var(--faint); font-size: 11px;
+    }
+    .divider::before, .divider::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+
+    .link-row {
+      text-align: center; font-size: 13px; color: var(--muted);
+    }
+    .link-row a {
+      color: var(--accent); text-decoration: none; font-weight: 500;
+    }
+    .link-row a:hover { text-decoration: underline; }
+
+    /* spinner */
+    .spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff; border-radius: 50%;
+      animation: spin 0.7s linear infinite; vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* responsive */
+    @media (max-width: 680px) {
+      .shell { grid-template-columns: 1fr; }
+      .left  { display: none; }
+      .right { padding: 40px 24px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- ── Left: ambient console ── -->
+  <div class="left">
+    <div class="console-log" id="console-log"></div>
+
+    <div class="left-bottom">
+      <div class="left-logo">
+        <div class="logo-mark">IQ</div>
+        <div>
+          <div class="logo-name">OpsIQ</div>
+          <div class="logo-sub">INTELLIGENT OPS ASSISTANT</div>
+        </div>
+      </div>
+      <p class="left-tagline">
+        Chat, query docs, and<br/>
+        run <em>automated postmortems</em><br/>
+        on your incident logs.
+      </p>
+      <div class="left-chips">
+        <span class="lchip">💬 Chat</span>
+        <span class="lchip">📄 RAG</span>
+        <span class="lchip">🔍 PostMortem</span>
+        <span class="lchip">⚡ Llama 3.3-70b</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Right: login form ── -->
+  <div class="right">
+    <div class="form-wrap">
+
+      <div class="form-head">
+        <h1>Welcome back</h1>
+        <p>Sign in to your OpsIQ account to continue.</p>
+      </div>
+
+      <div id="form-error"></div>
+      <div id="form-success"></div>
+
+      <div class="field">
+        <label for="email">Email</label>
+        <input type="email" id="email" placeholder="you@company.com" autocomplete="email"/>
+        <div class="field-err" id="err-email"></div>
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="••••••••" autocomplete="current-password"/>
+        <div class="field-err" id="err-password"></div>
+      </div>
+
+      <button class="btn-submit" id="btn-login" onclick="doLogin()">Sign in</button>
+
+      <div class="divider">or</div>
+
+      <div class="link-row">
+        Don't have an account? <a href="/signup">Create one</a>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+  /* ── Console log animation ── */
+  const LINES = [
+    { cls: 'info', t: '[00:00:01] system   boot sequence initiated' },
+    { cls: 'ok',   t: '[00:00:02] kernel   loaded modules: faiss, langchain, groq' },
+    { cls: 'ok',   t: '[00:00:03] db       postgresql connection established' },
+    { cls: 'ok',   t: '[00:00:04] auth     session manager ready' },
+    { cls: 'info', t: '[00:00:05] llm      loading llama-3.3-70b-versatile...' },
+    { cls: 'ok',   t: '[00:00:07] llm      model ready (temperature=0.7)' },
+    { cls: 'ok',   t: '[00:00:08] embed    all-MiniLM-L6-v2 loaded' },
+    { cls: 'ok',   t: '[00:00:09] rag      chunk_size=500 overlap=50 top_k=4' },
+    { cls: 'ok',   t: '[00:00:10] pm       chunk_lines=30 overlap=5 top_k=4' },
+    { cls: 'warn', t: '[00:00:11] monitor  awaiting session tokens...' },
+    { cls: 'info', t: '[00:00:12] api      /session /chat /upload ready' },
+    { cls: 'ok',   t: '[00:00:13] system   all systems nominal' },
+    { cls: 'warn', t: '[00:00:14] auth     no active session — login required' },
+  ];
+
+  function runConsole() {
+    const el = document.getElementById('console-log');
+    LINES.forEach(({ cls, t }, i) => {
+      setTimeout(() => {
+        const div = document.createElement('div');
+        div.className = `log-line ${cls}`;
+        div.style.animationDelay = '0ms';
+        div.textContent = t;
+        el.appendChild(div);
+        // loop
+        if (i === LINES.length - 1) {
+          setTimeout(() => { el.innerHTML = ''; runConsole(); }, 4000);
+        }
+      }, i * 260);
+    });
+  }
+  runConsole();
+
+  /* ── Login ── */
+  function clearErrors() {
+    ['email','password'].forEach(f => {
+      document.getElementById(`err-${f}`).classList.remove('show');
+      document.getElementById(f).classList.remove('err');
+    });
+    document.getElementById('form-error').classList.remove('show');
+    document.getElementById('form-success').classList.remove('show');
+  }
+
+  function showError(id, msg) {
+    const el = document.getElementById(`err-${id}`);
+    el.textContent = msg; el.classList.add('show');
+    document.getElementById(id).classList.add('err');
+  }
+
+  function showBanner(id, msg) {
+    const el = document.getElementById(id);
+    el.textContent = msg; el.classList.add('show');
+  }
+
+  function setLoading(on) {
+    const btn = document.getElementById('btn-login');
+    btn.disabled = on;
+    btn.innerHTML = on ? '<span class="spinner"></span>Signing in…' : 'Sign in';
+  }
+
+  async function doLogin() {
+    clearErrors();
+    const email    = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    let ok = true;
+
+    if (!email)    { showError('email',    'Email is required.');    ok = false; }
+    if (!password) { showError('password', 'Password is required.'); ok = false; }
+    if (!ok) return;
+
+    setLoading(true);
+    try {
+      const res  = await fetch('/auth/login', {
+        method      : 'POST',
+        headers     : { 'Content-Type': 'application/json' },
+        credentials : 'include',
+        body        : JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        showBanner('form-success', `Welcome back, ${data.username}! Redirecting…`);
+        setTimeout(() => window.location.href = '/app', 900);
+      } else {
+        showBanner('form-error', data.detail || 'Sign-in failed. Please try again.');
+      }
+    } catch {
+      showBanner('form-error', 'Network error. Is the server running?');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Enter key
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+
+  // If already authed, redirect immediately
+  (async () => {
+    try {
+      const r = await fetch('/auth/me', { credentials: 'include' });
+      if (r.ok) window.location.href = '/app';
+    } catch {}
+  })();
+</script>
+</body>
+</html>

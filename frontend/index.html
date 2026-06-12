@@ -30,7 +30,7 @@
     html, body { height: 100%; overflow: hidden; }
     body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; }
 
-    /* navbar */
+    /* ── navbar ── */
     nav {
       position: fixed; top: 0; left: 0; right: 0; height: 52px;
       background: var(--surface); border-bottom: 1px solid var(--border);
@@ -45,6 +45,7 @@
     }
     .brand-name { font-size: 14px; font-weight: 600; letter-spacing: -0.2px; }
     .nav-right { display: flex; align-items: center; gap: 6px; }
+
     .mode-pill {
       padding: 3px 10px; border-radius: 20px; font-size: 11px;
       font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; transition: all 0.3s;
@@ -52,6 +53,22 @@
     .mode-chat       { background: var(--surface3); color: var(--muted); border: 1px solid var(--border2); }
     .mode-rag        { background: var(--green-bg); color: var(--green); border: 1px solid rgba(74,222,128,0.2); }
     .mode-postmortem { background: var(--accent-bg); color: var(--accent); border: 1px solid rgba(124,111,247,0.25); }
+
+    /* user badge */
+    .user-badge {
+      display: flex; align-items: center; gap: 7px;
+      padding: 4px 10px 4px 6px;
+      border-radius: 20px; background: var(--surface2);
+      border: 1px solid var(--border2);
+      font-size: 12px; color: var(--muted);
+    }
+    .user-avatar {
+      width: 20px; height: 20px; border-radius: 50%;
+      background: var(--accent); display: flex; align-items: center;
+      justify-content: center; font-size: 9px; font-weight: 700; color: #fff;
+      flex-shrink: 0;
+    }
+
     .btn {
       padding: 5px 11px; border-radius: 7px; font-size: 12px; font-weight: 500;
       background: var(--surface2); border: 1px solid var(--border2);
@@ -59,10 +76,17 @@
     }
     .btn:hover { background: var(--surface3); color: var(--text); border-color: var(--border2); }
 
-    /* layout */
+    /* logout button — subtle red tint on hover */
+    .btn-logout:hover {
+      background: rgba(248,113,113,0.08);
+      border-color: rgba(248,113,113,0.25);
+      color: var(--red);
+    }
+
+    /* ── layout ── */
     .layout { display: flex; height: 100vh; padding-top: 52px; overflow: hidden; }
 
-    /* sidebar */
+    /* ── sidebar ── */
     .sidebar {
       width: 0; overflow: hidden; flex-shrink: 0;
       border-right: 1px solid var(--border);
@@ -88,10 +112,10 @@
     .role-h { color: #60a5fa; font-weight: 500; }
     .role-a { color: var(--green); font-weight: 500; }
 
-    /* main */
+    /* ── main ── */
     main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
 
-    /* messages */
+    /* ── messages ── */
     #msgs {
       flex: 1; overflow-y: auto; padding: 28px 0 8px;
       display: flex; flex-direction: column;
@@ -120,7 +144,7 @@
     .name-ai   { color: var(--muted); }
     .msg-text  { font-size: 14px; line-height: 1.75; color: var(--text); white-space: pre-wrap; word-break: break-word; }
 
-    /* welcome */
+    /* ── welcome ── */
     .welcome {
       flex: 1; display: flex; flex-direction: column;
       align-items: center; justify-content: center;
@@ -139,14 +163,14 @@
       border: 1px solid var(--border2); color: var(--muted); background: var(--surface2);
     }
 
-    /* sys */
+    /* ── sys ── */
     .sys { display: flex; justify-content: center; padding: 6px 24px; animation: up 0.18s ease; }
     .sys span {
       font-size: 11px; color: var(--muted); background: var(--surface2);
       border: 1px solid var(--border); padding: 3px 12px; border-radius: 20px;
     }
 
-    /* typing */
+    /* ── typing ── */
     .typing-row { display: flex; gap: 12px; padding: 4px 24px; max-width: 740px; width: 100%; margin: 0 auto; }
     .dots { display: flex; gap: 4px; align-items: center; padding: 8px 2px; }
     .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--faint); animation: blink 1.2s infinite; }
@@ -154,7 +178,7 @@
     .dot:nth-child(3) { animation-delay: 0.4s; }
     @keyframes blink { 0%,80%,100% { opacity: 0.2; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1); } }
 
-    /* report */
+    /* ── report panel ── */
     #report-panel {
       display: none; margin: 0 24px 6px; border: 1px solid rgba(124,111,247,0.2);
       border-radius: 10px; overflow: hidden; max-width: 740px;
@@ -183,11 +207,10 @@
     }
     #report-body { font-size: 12px; color: var(--muted); padding: 14px; white-space: pre-wrap; line-height: 1.6; min-height: 100%; }
 
-    /* bottom */
+    /* ── bottom ── */
     .bottom { padding: 10px 24px 14px; background: var(--bg); border-top: 1px solid var(--border); flex-shrink: 0; }
     #progress { display: none; font-size: 12px; color: var(--accent); background: var(--accent-bg); border: 1px solid rgba(124,111,247,0.12); border-radius: 7px; padding: 7px 12px; margin-bottom: 8px; max-width: 740px; margin-left: auto; margin-right: auto; }
 
-    /* input box */
     .input-box {
       display: flex; align-items: flex-end; gap: 6px; max-width: 740px;
       margin: 0 auto; background: var(--surface); border: 1px solid var(--border2);
@@ -198,7 +221,6 @@
 
     #file-inp { display: none; }
 
-    /* + button */
     .plus-btn {
       width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
       background: var(--surface2); border: 1px solid var(--border2);
@@ -215,7 +237,6 @@
     }
     #inp::placeholder { color: var(--faint); }
 
-    /* send button */
     .send-btn {
       width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
       background: var(--accent); border: none; color: #fff; cursor: pointer;
@@ -238,8 +259,16 @@
   </div>
   <div class="nav-right">
     <span id="mode-pill" class="mode-pill mode-chat">Chat</span>
+
+    <!-- user badge — populated on load -->
+    <div class="user-badge" id="user-badge" style="display:none">
+      <div class="user-avatar" id="user-avatar">?</div>
+      <span id="user-name">…</span>
+    </div>
+
     <button class="btn" onclick="toggleMemory()">Memory</button>
     <button class="btn" onclick="newSession()">New session</button>
+    <button class="btn btn-logout" onclick="doLogout()">Sign out</button>
   </div>
 </nav>
 
@@ -292,11 +321,8 @@
       <div id="progress"></div>
       <input type="file" id="file-inp" accept=".pdf,.docx,.doc,.txt,.log" onchange="onFileSelect(event)"/>
       <div class="input-box" id="input-box">
-        <!-- + attach button -->
         <button class="plus-btn" onclick="document.getElementById('file-inp').click()" title="Attach file (PDF, DOCX, TXT, LOG)">+</button>
-        <!-- textarea -->
         <textarea id="inp" rows="1" placeholder="Message OpsIQ..." onkeydown="onKey(event)" oninput="resize(this)"></textarea>
-        <!-- send -->
         <button class="send-btn" id="send-btn" onclick="send()" title="Send (Enter)">↑</button>
       </div>
       <p class="hint">+ to attach &nbsp;·&nbsp; Enter to send &nbsp;·&nbsp; Shift+Enter for new line</p>
@@ -305,221 +331,254 @@
 </div>
 
 <script>
-const API = "http://localhost:8000";
+const API = "";          // same origin — no prefix needed
 let sid = null, memOpen = false, streaming = false;
 
+/* ── Auth guard — runs first ── */
+async function checkAuth() {
+  try {
+    const r = await fetch('/auth/me', { credentials: 'include' });
+    if (!r.ok) {
+      window.location.href = '/login';
+      return false;
+    }
+    const user = await r.json();
+    // Populate user badge
+    document.getElementById('user-name').textContent   = user.username;
+    document.getElementById('user-avatar').textContent = user.username[0].toUpperCase();
+    document.getElementById('user-badge').style.display = 'flex';
+    return true;
+  } catch {
+    window.location.href = '/login';
+    return false;
+  }
+}
+
 async function init() {
-  const r = await fetch(`${API}/session`, { method: "POST" });
+  const authed = await checkAuth();
+  if (!authed) return;
+
+  const r = await fetch(`${API}/session`, { method: 'POST', credentials: 'include' });
   sid = (await r.json()).session_id;
 }
 
-const H = (x = {}) => ({ "x-session-id": sid, ...x });
+const H = (x = {}) => ({ 'x-session-id': sid, ...x });
+
+/* ── Logout ── */
+async function doLogout() {
+  await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
+  window.location.href = '/login';
+}
 
 /* ── Session ── */
 async function newSession() {
-  if (!confirm("Start a new session? Current context will be lost.")) return;
-  await fetch(`${API}/session`, { method: "DELETE", headers: H() });
+  if (!confirm('Start a new session? Current context will be lost.')) return;
+  await fetch(`${API}/session`, { method: 'DELETE', headers: H(), credentials: 'include' });
   sid = null;
-  document.getElementById("msgs").innerHTML = '<div class="welcome" id="welcome"><div class="welcome-logo">IQ</div><h1>Welcome to OpsIQ</h1><p>Your intelligent ops assistant — chat freely, query documents, or drop a log file for a full postmortem analysis.</p><div class="chips"><span class="chip">💬 Chat</span><span class="chip">📄 RAG — PDF / DOCX / TXT</span><span class="chip">🔍 PostMortem — LOG</span></div></div>';
-  document.getElementById("report-panel").style.display = "none";
-  setMode("chat");
-  await init();
-  sys("New session started.");
+  document.getElementById('msgs').innerHTML = '<div class="welcome" id="welcome"><div class="welcome-logo">IQ</div><h1>Welcome to OpsIQ</h1><p>Your intelligent ops assistant — chat freely, query documents, or drop a log file for a full postmortem analysis.</p><div class="chips"><span class="chip">💬 Chat</span><span class="chip">📄 RAG — PDF / DOCX / TXT</span><span class="chip">🔍 PostMortem — LOG</span></div></div>';
+  document.getElementById('report-panel').style.display = 'none';
+  setMode('chat');
+  const r = await fetch(`${API}/session`, { method: 'POST', credentials: 'include' });
+  sid = (await r.json()).session_id;
+  sys('New session started.');
 }
 
 /* ── Mode ── */
 function setMode(m) {
-  const p = document.getElementById("mode-pill");
-  const labels = { chat: "Chat", rag: "RAG", postmortem: "PostMortem" };
+  const p = document.getElementById('mode-pill');
+  const labels = { chat: 'Chat', rag: 'RAG', postmortem: 'PostMortem' };
   p.className = `mode-pill mode-${m}`;
   p.textContent = labels[m] || m;
 }
 async function refreshMode() {
-  const r = await fetch(`${API}/mode`, { headers: H() });
+  const r = await fetch(`${API}/mode`, { headers: H(), credentials: 'include' });
   setMode((await r.json()).mode);
 }
 
 /* ── Memory ── */
 async function toggleMemory() {
   memOpen = !memOpen;
-  document.getElementById("sidebar").classList.toggle("open", memOpen);
+  document.getElementById('sidebar').classList.toggle('open', memOpen);
   if (memOpen) await loadMem();
 }
 async function loadMem() {
-  const r  = await fetch(`${API}/memory`, { headers: H() });
+  const r  = await fetch(`${API}/memory`, { headers: H(), credentials: 'include' });
   const d  = await r.json();
-  const el = document.getElementById("mem-content");
-  let h = "";
+  const el = document.getElementById('mem-content');
+  let h = '';
   if (d.summary) h += `<div class="mem-summary"><div class="mem-label">Summary</div>${d.summary}</div>`;
   if (d.messages?.length) {
     h += `<div class="mem-label" style="margin-bottom:6px">Buffer · ${d.messages.length}</div>`;
     d.messages.forEach(m => {
-      const cls = m.role === "human" ? "role-h" : "role-a";
-      h += `<div class="mem-msg"><span class="${cls}">${m.role === "human" ? "You" : "AI"}</span><br/>${m.content}</div>`;
+      const cls = m.role === 'human' ? 'role-h' : 'role-a';
+      h += `<div class="mem-msg"><span class="${cls}">${m.role === 'human' ? 'You' : 'AI'}</span><br/>${m.content}</div>`;
     });
   }
   el.innerHTML = h || '<p style="color:var(--faint);font-size:12px">No memory yet.</p>';
 }
 
 /* ── Messages ── */
-function removeWelcome() {
-  document.getElementById("welcome")?.remove();
-}
-function addMsg(role, text = "") {
+function removeWelcome() { document.getElementById('welcome')?.remove(); }
+function addMsg(role, text = '') {
   removeWelcome();
-  const msgs = document.getElementById("msgs");
-  const row  = document.createElement("div");
-  row.className = "msg-row";
-  const isUser = role === "user";
+  const msgs = document.getElementById('msgs');
+  const row  = document.createElement('div');
+  row.className = 'msg-row';
+  const isUser = role === 'user';
+  const initials = isUser
+    ? (document.getElementById('user-avatar')?.textContent || 'U')
+    : 'AI';
   row.innerHTML = `
-    <div class="avatar ${isUser ? 'av-user' : 'av-ai'}">${isUser ? 'U' : 'AI'}</div>
+    <div class="avatar ${isUser ? 'av-user' : 'av-ai'}">${initials}</div>
     <div class="msg-body">
-      <div class="msg-name ${isUser ? 'name-user' : 'name-ai'}">${isUser ? 'You' : 'OpsIQ'}</div>
+      <div class="msg-name ${isUser ? 'name-user' : 'name-ai'}">${isUser ? (document.getElementById('user-name')?.textContent || 'You') : 'OpsIQ'}</div>
       <div class="msg-text"></div>
     </div>`;
   msgs.appendChild(row);
   msgs.scrollTop = msgs.scrollHeight;
-  return row.querySelector(".msg-text");
+  return row.querySelector('.msg-text');
 }
 function sys(text) {
   removeWelcome();
-  const msgs = document.getElementById("msgs");
-  const el   = document.createElement("div");
-  el.className = "sys";
+  const msgs = document.getElementById('msgs');
+  const el   = document.createElement('div');
+  el.className = 'sys';
   el.innerHTML = `<span>${text}</span>`;
   msgs.appendChild(el);
   msgs.scrollTop = msgs.scrollHeight;
 }
 function addTyping() {
-  const msgs = document.getElementById("msgs");
-  const row  = document.createElement("div");
-  row.className = "typing-row"; row.id = "typing";
+  const msgs = document.getElementById('msgs');
+  const row  = document.createElement('div');
+  row.className = 'typing-row'; row.id = 'typing';
   row.innerHTML = `<div class="avatar av-ai">AI</div><div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>`;
   msgs.appendChild(row);
   msgs.scrollTop = msgs.scrollHeight;
 }
-function rmTyping() { document.getElementById("typing")?.remove(); }
+function rmTyping() { document.getElementById('typing')?.remove(); }
 
 /* ── Chat ── */
 async function send() {
-  const el  = document.getElementById("inp");
+  const el  = document.getElementById('inp');
   const msg = el.value.trim();
   if (!msg || streaming) return;
-  el.value = ""; resize(el);
-  addMsg("user", msg);
+  el.value = ''; resize(el);
+  addMsg('user', msg);
   addTyping();
   streaming = true;
-  document.getElementById("send-btn").disabled = true;
+  document.getElementById('send-btn').disabled = true;
 
   const res = await fetch(`${API}/chat`, {
-    method: "POST",
-    headers: H({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ message: msg }),
+    method      : 'POST',
+    headers     : H({ 'Content-Type': 'application/json' }),
+    credentials : 'include',
+    body        : JSON.stringify({ message: msg }),
   });
 
   rmTyping();
-  const bubble = addMsg("ai");
+  const bubble = addMsg('ai');
   const reader = res.body.getReader();
   const dec    = new TextDecoder();
-  let buf = "";
+  let buf = '';
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     buf += dec.decode(value, { stream: true });
-    const lines = buf.split("\n"); buf = lines.pop();
+    const lines = buf.split('\n'); buf = lines.pop();
     for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
+      if (!line.startsWith('data: ')) continue;
       const tok = line.slice(6);
-      if (tok === "[DONE]") break;
+      if (tok === '[DONE]') break;
       bubble.textContent += tok;
-      document.getElementById("msgs").scrollTop = 99999;
+      document.getElementById('msgs').scrollTop = 99999;
     }
   }
 
   streaming = false;
-  document.getElementById("send-btn").disabled = false;
+  document.getElementById('send-btn').disabled = false;
   if (memOpen) await loadMem();
 }
-function onKey(e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }
-function resize(el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 160) + "px"; }
+function onKey(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }
+function resize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 160) + 'px'; }
 
 /* ── File upload ── */
-function onDragOver(e) { e.preventDefault(); document.getElementById("input-box").classList.add("drag-over"); }
-function onDragLeave() { document.getElementById("input-box").classList.remove("drag-over"); }
+function onDragOver(e) { e.preventDefault(); document.getElementById('input-box').classList.add('drag-over'); }
+function onDragLeave() { document.getElementById('input-box').classList.remove('drag-over'); }
 function onDrop(e) { e.preventDefault(); onDragLeave(); const f = e.dataTransfer.files[0]; if (f) upload(f); }
-function onFileSelect(e) { const f = e.target.files[0]; if (f) upload(f); e.target.value = ""; }
+function onFileSelect(e) { const f = e.target.files[0]; if (f) upload(f); e.target.value = ''; }
 
 async function upload(file) {
-  const ext  = file.name.split(".").pop().toLowerCase();
-  const prog = document.getElementById("progress");
-  prog.style.display = "block";
+  const ext  = file.name.split('.').pop().toLowerCase();
+  const prog = document.getElementById('progress');
+  prog.style.display = 'block';
   prog.textContent   = `Uploading '${file.name}'...`;
 
   const fd = new FormData();
-  fd.append("file", file);
-  const res = await fetch(`${API}/upload`, { method: "POST", headers: H(), body: fd });
+  fd.append('file', file);
+  const res = await fetch(`${API}/upload`, {
+    method      : 'POST',
+    headers     : H(),
+    credentials : 'include',
+    body        : fd,
+  });
 
-  if (ext === "log") {
-    // Check if backend returned JSON (e.g. rejection warning) or SSE stream
-    const contentType = res.headers.get("content-type") || "";
-    if (contentType.includes("application/json")) {
+  if (ext === 'log') {
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
       const d = await res.json();
-      prog.style.display = "none";
+      prog.style.display = 'none';
       sys(`⚠ ${d.message}`);
       return;
     }
 
-    // SSE stream — postmortem pipeline running
     const reader = res.body.getReader();
     const dec    = new TextDecoder();
-    let buf = "";
+    let buf = '';
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buf += dec.decode(value, { stream: true });
-      const lines = buf.split("\n"); buf = lines.pop();
+      const lines = buf.split('\n'); buf = lines.pop();
       for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
+        if (!line.startsWith('data: ')) continue;
         const raw = line.slice(6);
-        if (raw === "[DONE]") break;
+        if (raw === '[DONE]') break;
         try {
           const evt = JSON.parse(raw);
-          if (evt.event === "progress") { prog.textContent = `⚙  ${evt.text}`; }
-          else if (evt.event === "report") {
-            document.getElementById("report-body").textContent = evt.text;
-            document.getElementById("report-panel").style.display = "block";
-            sys("Postmortem report ready — ask anything about the incident.");
+          if (evt.event === 'progress') { prog.textContent = `⚙  ${evt.text}`; }
+          else if (evt.event === 'report') {
+            document.getElementById('report-body').textContent = evt.text;
+            document.getElementById('report-panel').style.display = 'block';
+            sys('Postmortem report ready — ask anything about the incident.');
           }
         } catch {}
       }
     }
-    setMode("postmortem");
-    prog.style.display = "none";
+    setMode('postmortem');
+    prog.style.display = 'none';
   } else {
     const d = await res.json();
-    prog.style.display = "none";
-    if (d.status === "error" || d.status === "locked") sys(`⚠ ${d.message}`);
+    prog.style.display = 'none';
+    if (d.status === 'error' || d.status === 'locked') sys(`⚠ ${d.message}`);
     else { sys(d.message); await refreshMode(); }
   }
 }
 
-/* ── Report toggle ── */
+/* ── Report ── */
 function toggleReport() {
-  const wrap = document.getElementById("report-body-wrap");
-  const btn  = document.getElementById("rtoggle");
-  const collapsed = wrap.style.display === "none";
-  wrap.style.display = collapsed ? "block" : "none";
-  btn.textContent = collapsed ? "▲ collapse" : "▼ expand";
+  const wrap = document.getElementById('report-body-wrap');
+  const btn  = document.getElementById('rtoggle');
+  const collapsed = wrap.style.display === 'none';
+  wrap.style.display = collapsed ? 'block' : 'none';
+  btn.textContent = collapsed ? '▲ collapse' : '▼ expand';
 }
-
 async function copyReport() {
-  const text = document.getElementById("report-body").textContent;
-  const btn  = document.getElementById("copy-btn");
+  const text = document.getElementById('report-body').textContent;
+  const btn  = document.getElementById('copy-btn');
   await navigator.clipboard.writeText(text);
-  btn.textContent = "Copied!";
-  btn.classList.add("copied");
-  setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("copied"); }, 2000);
+  btn.textContent = 'Copied!'; btn.classList.add('copied');
+  setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
 }
 
 init();
