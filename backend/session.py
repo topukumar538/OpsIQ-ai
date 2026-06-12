@@ -1,32 +1,42 @@
 # Location: backend/session.py
-from dataclasses import dataclass, field
 from typing import Any
+from core.llm import get_llm
+from graph.builder import build_graph, make_initial_state
 
-CHAT       = "chat"
-RAG        = "rag"
-POSTMORTEM = "postmortem"
-
-
-@dataclass
-class SessionState:
-    mode:        str = CHAT
-    chat_memory: Any = None
-    rag_store:   Any = None
-    rag_memory:  Any = None
-    pm_store:    Any = None
-    pm_memory:   Any = None
-    report_str:  str = ""
+# session_id -> {"graph": compiled_graph, "state": current_state}
+_sessions: dict[str, dict[str, Any]] = {}
 
 
-# In-memory store — session_id -> SessionState
-_sessions: dict[str, SessionState] = {}
+def create_session(session_id: str) -> None:
+    llm = get_llm()
+    _sessions[session_id] = {
+        "graph": build_graph(),
+        "state": make_initial_state(llm),
+        "llm":   llm,
+    }
 
 
-def get_session(session_id: str) -> SessionState:
+def get_session(session_id: str) -> dict[str, Any]:
     if session_id not in _sessions:
-        _sessions[session_id] = SessionState()
+        create_session(session_id)
     return _sessions[session_id]
 
 
 def delete_session(session_id: str) -> None:
     _sessions.pop(session_id, None)
+
+
+def run_graph(session_id: str, user_input: str = "", file_path: str = "") -> dict[str, Any]:
+    session = get_session(session_id)
+    state   = session["state"]
+
+    # Update input
+    state["user_input"] = user_input
+    state["file_path"]  = file_path
+
+    # Run graph
+    result = session["graph"].invoke(state)
+
+    # Persist updated state
+    session["state"] = result
+    return result

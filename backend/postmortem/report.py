@@ -1,5 +1,5 @@
 # Location: backend/postmortem/report.py
-from datetime import datetime, timezone, timezone
+from datetime import datetime, timezone
 
 
 def build_report(state: dict, log_filename: str) -> str:
@@ -17,7 +17,7 @@ def build_report(state: dict, log_filename: str) -> str:
     lines.append("\n[ ERRORS DETECTED ]")
     lines.append(section)
     if error_counts:
-        lines.append(f"Total occurrences : {sum(error_counts.values())}")
+        lines.append(f"Total occurrences  : {sum(error_counts.values())}")
         lines.append(f"Unique error types : {len(error_counts)}\n")
         for name, count in sorted(error_counts.items(), key=lambda x: -x[1]):
             lines.append(f"  {name:<40} x{count}")
@@ -25,10 +25,10 @@ def build_report(state: dict, log_filename: str) -> str:
         lines.append("  No major errors detected.")
 
     for title, key in [
-        ("LOG ANALYSIS",    "log_analysis"),
-        ("TIMELINE",        "timeline_analysis"),
-        ("ROOT CAUSE",      "root_cause"),
-        ("REMEDIATION PLAN","remediation"),
+        ("LOG ANALYSIS",     "log_analysis"),
+        ("TIMELINE",         "timeline_analysis"),
+        ("ROOT CAUSE",       "root_cause"),
+        ("REMEDIATION PLAN", "remediation"),
     ]:
         lines.append(f"\n[ {title} ]")
         lines.append(section)

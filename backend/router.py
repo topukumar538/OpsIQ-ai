@@ -1,7 +1,6 @@
 # Location: backend/router.py
 import re
 from pathlib import Path
-
 from config import RAG_EXTENSIONS, POSTMORTEM_EXTENSION
 
 
@@ -15,7 +14,6 @@ def normalize_path(text: str) -> Path:
 
 
 def looks_like_path(text: str) -> bool:
-    # Detect if input looks like a file path
     p = text.strip().strip('"').strip("'")
     return bool(p) and (
         "\\" in p or "/" in p or
@@ -35,17 +33,8 @@ def is_log_file(text: str) -> bool:
 
 
 def classify_input(text: str) -> str:
-    """
-    Returns one of:
-      'rag_file'   — valid pdf/docx/txt file
-      'log_file'   — valid .log file
-      'bad_path'   — looks like a path but invalid/unsupported
-      'message'    — normal chat message
-    """
-    if is_rag_file(text):
-        return "rag_file"
-    if is_log_file(text):
-        return "log_file"
-    if looks_like_path(text):
-        return "bad_path"
+    """Returns: 'rag_file' | 'log_file' | 'bad_path' | 'message'"""
+    if is_rag_file(text):   return "rag_file"
+    if is_log_file(text):   return "log_file"
+    if looks_like_path(text): return "bad_path"
     return "message"

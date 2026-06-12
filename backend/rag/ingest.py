@@ -1,16 +1,13 @@
-# Location: backend/doc_ingest.py
+# Location: backend/rag/ingest.py
 from pathlib import Path
 
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain_huggingface import HuggingFaceEmbeddings
 
-from config import EMBED_MODEL, RAG_CHUNK_SIZE, RAG_CHUNK_OVERLAP, RAG_TOP_K
+from config import RAG_CHUNK_SIZE, RAG_CHUNK_OVERLAP, RAG_TOP_K
+from core.retriever import get_embeddings
 from router import normalize_path
-
-# Load embedding model once
-_embeddings = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
 
 
 def load_and_chunk(filepath: str) -> list:
@@ -32,16 +29,10 @@ def load_and_chunk(filepath: str) -> list:
 
 
 def build_store(filepath: str) -> FAISS:
-    # Create fresh in-memory FAISS store from a document
     chunks = load_and_chunk(filepath)
-    return FAISS.from_documents(chunks, _embeddings)
+    return FAISS.from_documents(chunks, get_embeddings())
 
 
 def add_to_store(store: FAISS, filepath: str) -> None:
-    # Merge new document into existing store
     chunks = load_and_chunk(filepath)
     store.add_documents(chunks)
-
-
-def get_retriever(store: FAISS):
-    return store.as_retriever(search_kwargs={"k": RAG_TOP_K})
