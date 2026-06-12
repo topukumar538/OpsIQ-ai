@@ -16,7 +16,7 @@ from auth.dependencies import get_current_user
 from auth.router import router as auth_router
 from auth.database import init_db
 from auth.models import User
-from session import create_session, get_session, delete_session, run_graph
+from session import create_session, get_session, delete_session, run_graph, run_graph_async
 from router import classify_input
 from graph.state import POSTMORTEM, RAG
 
@@ -85,40 +85,42 @@ def end_session(
 
 
 @app.get("/mode")
-def get_mode(
+async def get_mode(
     x_session_id: str  = Header(...),
     current_user: User = Depends(get_current_user),
 ):
     session = get_session(x_session_id)
-    return {"mode": session["state"]["mode"]}
+    async with session["lock"]:
+        return {"mode": session["state"]["mode"]}
 
 
 @app.get("/memory")
-def get_memory(
+async def get_memory(
     x_session_id: str  = Header(...),
     current_user: User = Depends(get_current_user),
 ):
     session = get_session(x_session_id)
-    state   = session["state"]
-    mode    = state["mode"]
+    async with session["lock"]:
+        state  = session["state"]
+        mode   = state["mode"]
 
-    memory = (
-        state["chat_memory"] if mode == "chat" else
-        state["rag_memory"]  if mode == "rag"  else
-        state["pm_memory"]
-    )
+        memory = (
+            state["chat_memory"] if mode == "chat" else
+            state["rag_memory"]  if mode == "rag"  else
+            state["pm_memory"]
+        )
 
-    if not memory:
-        return {"summary": "", "messages": []}
+        if not memory:
+            return {"summary": "", "messages": []}
 
-    msgs = memory.chat_memory.messages
-    return {
-        "summary" : memory.moving_summary_buffer or "",
-        "messages": [
-            {"role": "human" if m.type == "human" else "ai", "content": str(m.content)[:200]}
-            for m in msgs
-        ],
-    }
+        msgs = memory.chat_memory.messages
+        return {
+            "summary" : memory.moving_summary_buffer or "",
+            "messages": [
+                {"role": "human" if m.type == "human" else "ai", "content": str(m.content)[:200]}
+                for m in msgs
+            ],
+        }
 
 
 # ── Chat ──────────────────────────────────────────────────────────────────────
@@ -130,8 +132,6 @@ async def chat(
     current_user : User = Depends(get_current_user),
 ):
     session = get_session(x_session_id)
-    state   = session["state"]
-    llm     = session["llm"]
     msg     = req.message.strip()
 
     async def _stream() -> AsyncGenerator[str, None]:
@@ -142,33 +142,41 @@ async def chat(
         from graph.nodes.rag import prompt as rag_prompt
         from graph.nodes.postmortem import prompt as pm_prompt
 
-        mode = state["mode"]
+        # Hold the lock for the entire streaming turn.
+        # This prevents a second message from being processed on the same
+        # session before the first one's memory has been saved — which would
+        # cause both messages to see the same history and the second save_turn
+        # to overwrite the first.
+        async with session["lock"]:
+            state = session["state"]
+            llm   = session["llm"]
+            mode  = state["mode"]
 
-        if mode == "chat":
-            memory  = state["chat_memory"]
-            history = get_history(memory)
-            filled  = chat_prompt.format(history=history, input=msg)
-        elif mode == RAG:
-            memory  = state["rag_memory"]
-            history = get_history(memory)
-            context = retrieve(state["rag_store"], msg, RAG_TOP_K)
-            filled  = rag_prompt.format(history=history, context=context, input=msg)
-        else:  # POSTMORTEM
-            memory  = state["pm_memory"]
-            history = get_history(memory)
-            context = retrieve(state["pm_store"], msg, PM_TOP_K)
-            filled  = pm_prompt.format(
-                report=state["report_str"], history=history, context=context, input=msg,
-            )
+            if mode == "chat":
+                memory  = state["chat_memory"]
+                history = get_history(memory)
+                filled  = chat_prompt.format(history=history, input=msg)
+            elif mode == RAG:
+                memory  = state["rag_memory"]
+                history = get_history(memory)
+                context = retrieve(state["rag_store"], msg, RAG_TOP_K)
+                filled  = rag_prompt.format(history=history, context=context, input=msg)
+            else:  # POSTMORTEM
+                memory  = state["pm_memory"]
+                history = get_history(memory)
+                context = retrieve(state["pm_store"], msg, PM_TOP_K)
+                filled  = pm_prompt.format(
+                    report=state["report_str"], history=history, context=context, input=msg,
+                )
 
-        full = ""
-        async for chunk in llm.astream(filled):
-            token = str(chunk.content)
-            if token:
-                full += token
-                yield f"data: {token}\n\n"
-        save_turn(memory, msg, full)
-        yield "data: [DONE]\n\n"
+            full = ""
+            async for chunk in llm.astream(filled):
+                token = str(chunk.content)
+                if token:
+                    full += token
+                    yield f"data: {token}\n\n"
+            save_turn(memory, msg, full)
+            yield "data: [DONE]\n\n"
 
     return StreamingResponse(_stream(), media_type="text/event-stream")
 
@@ -182,11 +190,9 @@ async def upload(
     current_user : User       = Depends(get_current_user),
 ):
     session = get_session(x_session_id)
-    state   = session["state"]
 
-    if state["mode"] == POSTMORTEM:
-        return {"status": "locked", "message": "Session locked to current report. Open a new session."}
-
+    # Read the file bytes before acquiring the lock — file I/O doesn't
+    # touch session state so there's no reason to hold the lock during it.
     fname    = file.filename or "upload"
     suffix   = Path(fname).suffix.lower()
     tmp_path = Path(f"/tmp/{uuid.uuid4()}{suffix}")
@@ -198,21 +204,39 @@ async def upload(
         tmp_path.unlink(missing_ok=True)
         return {"status": "error", "message": f"Unsupported file type: {suffix}"}
 
-    if state["mode"] == RAG and kind == "log_file":
+    # Check mode under lock before deciding what to do
+    async with session["lock"]:
+        current_mode = session["state"]["mode"]
+
+    if current_mode == POSTMORTEM:
+        tmp_path.unlink(missing_ok=True)
+        return {"status": "locked", "message": "Session locked to current report. Open a new session."}
+
+    if current_mode == RAG and kind == "log_file":
         tmp_path.unlink(missing_ok=True)
         return {"status": "locked", "message": "Log files cannot be added in RAG mode. Open a new session to run a PostMortem analysis."}
 
     if kind == "log_file":
         async def _run():
             yield f"data: {json.dumps({'event':'progress','text':f'Processing {fname}...'})}\n\n"
-            result = run_graph(x_session_id, file_path=str(tmp_path))
-            tmp_path.unlink(missing_ok=True)
+            try:
+                # run_graph_async acquires its own internal state access.
+                # The lock is NOT held across the entire pipeline — that would
+                # block /memory and /mode polls for the whole 30-90s duration.
+                # Instead, run_graph itself is the atomic unit; it reads state,
+                # runs the pipeline, then writes state back as one operation on
+                # the thread pool.
+                async with session["lock"]:
+                    result = await run_graph_async(x_session_id, file_path=str(tmp_path))
+            finally:
+                tmp_path.unlink(missing_ok=True)
             yield f"data: {json.dumps({'event':'report','text':result['report_str']})}\n\n"
             yield "data: [DONE]\n\n"
         return StreamingResponse(_run(), media_type="text/event-stream")
 
-    if kind in {"rag_file", "log_file"}:
-        result  = run_graph(x_session_id, file_path=str(tmp_path))
+    if kind == "rag_file":
+        async with session["lock"]:
+            result = await run_graph_async(x_session_id, file_path=str(tmp_path))
         tmp_path.unlink(missing_ok=True)
         warning = session["state"].get("rag_warning", "")
         if warning:
