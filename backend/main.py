@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.database import init_db, get_db
 from auth.dependencies import get_current_user
-from auth.models import User
+from auth.models import User, SessionFile
 from auth.router import router as auth_router
 from config import FAISS_STORE_DIR, RAG_TOP_K, PM_TOP_K
 from core.memory import save_message_to_db, save_memory_to_db
@@ -282,6 +282,18 @@ async def upload(
     suffix    = Path(fname).suffix.lower()
     tmp_path  = Path(f"/tmp/{uuid.uuid4()}{suffix}")
     raw_bytes = await file.read()
+
+    # Server-side size guard — second line of defence after client-side check.
+    # Client check is UX (instant feedback); this check is security
+    # (client validation can always be bypassed with curl/Postman etc.).
+    from config import MAX_UPLOAD_SIZE_MB
+    max_bytes = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    if len(raw_bytes) > max_bytes:
+        return {
+            "status" : "error",
+            "message": f"File too large ({len(raw_bytes) // (1024*1024)}MB). Maximum is {MAX_UPLOAD_SIZE_MB}MB.",
+        }
+
     tmp_path.write_bytes(raw_bytes)
 
     # classify_input() only ever sees real temp file paths here — never raw
@@ -363,9 +375,8 @@ async def upload(
         )
         # Auto-name from first uploaded filename if no files yet
         from sqlalchemy import select as sa_select
-        from auth.models import SessionFile as SF
         existing = await db.execute(
-            sa_select(SF).where(SF.session_id == db_id)
+            sa_select(SessionFile).where(SessionFile.session_id == db_id)
         )
         if not existing.scalars().all():
             await update_session_name(token, uid, fname, db)
@@ -410,13 +421,15 @@ def _fmt(s: int) -> str:
 @app.get("/upload/extensions")
 def upload_extensions():
     """
-    Return accepted file extensions.
-    Frontend uses this to build the file input accept attribute dynamically
-    so it always stays in sync with the backend — no hardcoding in two places.
+    Return accepted file extensions and upload size limit.
+    Frontend uses this so both extension filtering and size checking stay
+    in sync with the backend — no hardcoding in two places.
     """
     from router import supported_extensions
+    from config import MAX_UPLOAD_SIZE_MB
     exts = sorted(supported_extensions())
     return {
-        "extensions": exts,
-        "accept":     ",".join(exts),   # ready to drop into <input accept="...">
+        "extensions"  : exts,
+        "accept"      : ",".join(exts),
+        "max_size_mb" : MAX_UPLOAD_SIZE_MB,
     }

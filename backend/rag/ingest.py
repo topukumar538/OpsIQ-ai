@@ -123,3 +123,8 @@ def add_to_store(
         len(chunks), Path(file_path).name, store.index.ntotal,
     )
     return store
+
+
+# Alias — some files import build_store, others build_rag_store.
+# Both names point to the same function.
+build_store = build_rag_store

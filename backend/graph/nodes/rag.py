@@ -1,85 +1,90 @@
 # Location: backend/graph/nodes/rag.py
+from pathlib import Path
 from langchain.prompts import PromptTemplate
-from core.memory import get_history, save_turn, build_memory, seed_memory
-from core.retriever import retrieve
-from rag.ingest import build_store, add_to_store
-from router import normalize_path, classify_input
+
+from core.memory import make_memory, get_history, save_turn
+from core.retriever import build_store, retrieve          # build_store lives in retriever
+from graph.state import OpsState, RAG
 from config import RAG_TOP_K
-from graph.state import RAG, POSTMORTEM
 
-TEMPLATE = (
-    "You are a document-aware AI assistant. Answer using the retrieved context. "
-    "If the answer is not in the context, fall back to your own knowledge and say so.\n"
-    "Use conversation history for follow-up continuity.\n\n"
-    "Conversation History:\n{history}\n\n"
-    "Retrieved Context:\n{context}\n\n"
-    "Human: {input}\nAI:"
-)
+prompt = PromptTemplate.from_template("""
+You are an expert assistant answering questions from uploaded documents.
+You may receive overlapping or duplicate chunks if the same document was
+uploaded more than once — always consolidate your answer and avoid repeating
+information.
 
-prompt = PromptTemplate(input_variables=["history", "context", "input"], template=TEMPLATE)
+Conversation history:
+{history}
+
+Relevant document context:
+{context}
+
+Question: {input}
+
+Answer based only on the provided context. If the answer is not in the context,
+say so clearly rather than guessing.
+""".strip())
 
 
-def rag_node(state: dict) -> dict:
-    llm   = state["llm"]
-    store = state["rag_store"]
-    fp    = state.get("file_path") or ""
+def rag_node(state: OpsState) -> OpsState:
+    """
+    Handles both document loading and Q&A in RAG mode.
 
-    # File upload
-    if fp:
-        kind = classify_input(fp)
+    If file_path is set → load/merge document into FAISS store, seed memory.
+    If file_path is empty → answer user's question from existing store.
+    """
+    file_path = state.get("file_path", "")
+    llm       = state["llm"]
 
-        # Log file in RAG mode — reject, don't transition
-        if kind == "log_file":
-            return {
-                "mode": RAG, "response": "",
-                "file_path": "",  # clear so routing ends here
-                "llm": llm,
-                "rag_store": store,
-                "rag_memory": state["rag_memory"],
-                "rag_warning": "Log files cannot be added in RAG mode. Open a new session for PostMortem analysis.",
-            }
+    if file_path:
+        # Document ingestion path — build_store and add_to_store handle
+        # embedding and persistence. Memory seeding happens in session.py
+        # after the pipeline completes so it has access to the DB session.
+        state["file_path"] = ""
 
-        # RAG file — build or merge store
-        if store is None:
-            # First doc — seed RAG memory with full chat history
-            memory = build_memory(llm)
-            chat_mem = state.get("chat_memory")
-            if chat_mem:
-                parts = []
-                if chat_mem.moving_summary_buffer:
-                    parts.append(f"Summary of earlier conversation:\n{chat_mem.moving_summary_buffer}")
-                msgs = chat_mem.chat_memory.messages
-                if msgs:
-                    recent = "\n".join([
-                        f"{'Human' if m.type == 'human' else 'AI'}: {str(m.content)}"
-                        for m in msgs
-                    ])
-                    parts.append(f"Recent conversation:\n{recent}")
-                if parts:
-                    seed_memory(memory, "\n\n".join(parts))
-            print(f"  Loading '{normalize_path(fp).name}'...")
-            store = build_store(fp)
-            print(f"  {store.index.ntotal} vectors loaded.\n")
+        suffix = Path(file_path).suffix.lower()
+        if suffix == ".log":
+            # Log files cannot be processed in RAG mode
+            state["rag_warning"] = (
+                "Log files cannot be added in RAG mode. "
+                "Open a new session to run a postmortem analysis."
+            )
+            return state
+
+        existing = state.get("rag_store")
+        if existing is None:
+            from rag.ingest import build_rag_store
+            # user_id and token are passed via state for FAISS path construction
+            store = build_rag_store(
+                file_path,
+                state["user_id"],
+                state["session_token"],
+            )
+            state["rag_store"] = store
         else:
-            memory = state["rag_memory"] or build_memory(llm)
-            print(f"  Adding '{normalize_path(fp).name}' to store...")
-            add_to_store(store, fp)
-            print(f"  Store now has {store.index.ntotal} vectors.\n")
+            from rag.ingest import add_to_store
+            store = add_to_store(
+                existing,
+                file_path,
+                state["user_id"],
+                state["session_token"],
+            )
 
-        return {
-            "rag_store": store, "rag_memory": memory,
-            "mode": RAG, "response": "", "file_path": "", "llm": llm,
-        }
+        state["mode"] = RAG
+        if state.get("rag_memory") is None:
+            state["rag_memory"] = make_memory(llm)
 
-    # Normal question — retrieve and answer
-    memory  = state["rag_memory"] or build_memory(llm)
+        return state
+
+    # Q&A path
+    memory  = state.get("rag_memory") or make_memory(llm)
     history = get_history(memory)
-    context = retrieve(store, state["user_input"], RAG_TOP_K)
-    response = llm.invoke(prompt.format(history=history, context=context, input=state["user_input"]))
-    answer   = str(response.content)
+    context = retrieve(state["rag_store"], state["user_input"], RAG_TOP_K)
+    filled  = prompt.format(history=history, context=context, input=state["user_input"])
+    result  = llm.invoke(filled)
+    response = str(result.content)
 
-    save_turn(memory, state["user_input"], answer)
-    return {
-        "response": answer, "rag_memory": memory,
-        "rag_store": store, "mode": RAG, "llm": llm,
-    }
+    save_turn(memory, state["user_input"], response)
+    state["rag_memory"] = memory
+    state["response"]   = response
+    return state

@@ -1,29 +1,30 @@
 # Location: backend/graph/nodes/chat.py
 from langchain.prompts import PromptTemplate
-from core.memory import get_history, save_turn, build_memory
-from graph.state import CHAT
+from core.memory import make_memory, get_history, save_turn
+from graph.state import OpsState
 
-TEMPLATE = (
-    "You are a sharp, helpful AI assistant. Answer directly and concisely.\n"
-    "Use conversation history for follow-up continuity.\n\n"
-    "Conversation History:\n{history}\n\n"
-    "Human: {input}\nAI:"
-)
+prompt = PromptTemplate.from_template("""
+You are OpsIQ, a helpful AI assistant for DevOps and site reliability engineering.
+Be concise, accurate, and practical. Use technical language appropriate for engineers.
 
-prompt = PromptTemplate(input_variables=["history", "input"], template=TEMPLATE)
+Conversation history:
+{history}
+
+User: {input}
+Assistant:""".strip())
 
 
-def chat_node(state: dict) -> dict:
+def chat_node(state: OpsState) -> OpsState:
+    """Standard chat — no document context, just conversation history."""
     llm    = state["llm"]
-    memory = state["chat_memory"] or build_memory(llm)
-
-    # File upload — just pass through, routing handles transition
-    if state.get("file_path"):
-        return {"chat_memory": memory, "mode": CHAT, "response": "", "llm": llm}
+    memory = state.get("chat_memory") or make_memory(llm)
 
     history  = get_history(memory)
-    response = llm.invoke(prompt.format(history=history, input=state["user_input"]))
-    answer   = str(response.content)
+    filled   = prompt.format(history=history, input=state["user_input"])
+    result   = llm.invoke(filled)
+    response = str(result.content)
 
-    save_turn(memory, state["user_input"], answer)
-    return {"response": answer, "chat_memory": memory, "mode": CHAT, "llm": llm}
+    save_turn(memory, state["user_input"], response)
+    state["chat_memory"] = memory
+    state["response"]    = response
+    return state

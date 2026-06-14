@@ -33,7 +33,9 @@ class Settings(BaseSettings):
     )
 
     # ── LLM ──────────────────────────────────────────────────────────────────
-    groq_api_key: str
+    # Default "" so Pylance doesn't flag Settings() as missing a required arg.
+    # The @field_validator below catches empty/missing values at startup.
+    groq_api_key: str = ""
     model_name: str = "llama-3.3-70b-versatile"
 
     # Separate temperatures per mode.
@@ -57,6 +59,12 @@ class Settings(BaseSettings):
     # Structure: {faiss_store_dir}/{session_id}/rag/  and  .../pm/
     # Allows vector stores to survive server restarts.
     faiss_store_dir: str   = "./faiss_stores"
+
+    # ── Upload ────────────────────────────────────────────────────────────────
+    # Maximum file size in MB. Enforced server-side in /upload AND client-side
+    # in the frontend for instant feedback. Client check is UX; server check
+    # is security — never trust client-side validation alone.
+    max_upload_size_mb: int = 50
 
     # ── Postmortem ────────────────────────────────────────────────────────────
     pm_chunk_lines: int   = 30
@@ -158,7 +166,7 @@ class Settings(BaseSettings):
 
 
 # Single shared instance — imported by all other modules.
-settings = Settings() # type: ignore
+settings = Settings()
 
 # ── Flat aliases for backwards compatibility ───────────────────────────────────
 # Every other file does `from config import GROQ_API_KEY` etc.
@@ -186,6 +194,7 @@ DATABASE_URL                        = settings.database_url
 FAISS_STORE_DIR                     = settings.faiss_store_dir
 SESSION_TTL_SECONDS                 = settings.session_ttl_seconds
 SESSION_CLEANUP_INTERVAL_SECONDS    = settings.session_cleanup_interval_seconds
+MAX_UPLOAD_SIZE_MB                  = settings.max_upload_size_mb
 
 # ── Constants (not env-driven) ────────────────────────────────────────────────
 RAG_EXTENSIONS       = {".pdf", ".docx", ".doc", ".txt"}

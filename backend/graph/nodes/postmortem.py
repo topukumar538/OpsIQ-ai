@@ -1,80 +1,84 @@
 # Location: backend/graph/nodes/postmortem.py
+from pathlib import Path
 from langchain.prompts import PromptTemplate
 
-from core.memory import build_memory, seed_memory, get_history, save_turn
+from core.memory import make_memory, get_history, save_turn
 from core.retriever import retrieve
-from postmortem.ingest import read_log, build_store
-from postmortem.builder import run_postmortem
-from router import normalize_path
+from graph.state import OpsState, POSTMORTEM
 from config import PM_TOP_K
-from graph.state import POSTMORTEM
 
-TEMPLATE = (
-    "You are an expert SRE assistant helping the user understand a postmortem report.\n"
-    "Answer using the postmortem context. If the answer is not there, say so clearly.\n"
-    "Use conversation history for follow-up continuity.\n\n"
-    "Postmortem Report:\n{report}\n\n"
-    "Conversation History:\n{history}\n\n"
-    "Retrieved Context:\n{context}\n\n"
-    "Human: {input}\nAI:"
-)
+prompt = PromptTemplate.from_template("""
+You are a senior site reliability engineer reviewing a postmortem report.
+Answer questions based on the incident report and retrieved log context.
+Be precise, factual, and concise.
 
-prompt = PromptTemplate(
-    input_variables=["report", "history", "context", "input"],
-    template=TEMPLATE
-)
+Incident report:
+{report}
+
+Conversation history:
+{history}
+
+Relevant log context:
+{context}
+
+Question: {input}
+""".strip())
 
 
-def postmortem_node(state: dict) -> dict:
-    llm = state["llm"]
+def postmortem_node(state: OpsState) -> OpsState:
+    """
+    Handles both initial log processing and follow-up Q&A in postmortem mode.
 
-    # If pipeline not run yet — run it
-    if not state.get("report_str") and state.get("file_path"):
-        log_name = normalize_path(state["file_path"]).name
-        print(f"\n  Reading '{log_name}'...")
-        raw_log = read_log(state["file_path"])
-        print(f"  {len(raw_log.splitlines())} lines read\n")
+    First call (file_path set):
+        - Runs the full postmortem pipeline (log_analyzer → timeline →
+          root_cause → remediation → report_summarizer)
+        - Locks the session so no further uploads are accepted
+        - Memory seeding happens in session.py after pipeline completes
 
-        print("  Building knowledge store...")
-        store, error_counts = build_store(raw_log, llm)
+    Subsequent calls (file_path empty, session locked):
+        - Retrieval-augmented Q&A against the postmortem FAISS store
+    """
+    file_path = state.get("file_path", "")
+    llm       = state["llm"]
 
-        print("  Running postmortem pipeline...")
-        print("  (log_analyzer and timeline running in parallel)\n")
-        result = run_postmortem(llm, store, error_counts, log_name)
+    if file_path:
+        from postmortem.builder import run_postmortem
+        log_filename = Path(file_path).name
 
-        report_str     = result["report_str"]
-        report_summary = result["report_summary"]
-        pm_store       = result["store"]
+        # Run the full postmortem sub-pipeline
+        pm_state = run_postmortem(
+            log_path     = file_path,
+            log_filename = log_filename,
+            llm          = llm,
+            user_id      = state["user_id"],
+            session_token= state["session_token"],
+        )
 
-        # Build memory and seed with report summary
-        pm_memory = build_memory(llm)
-        seed_memory(pm_memory, report_summary)
+        state["pm_store"]   = pm_state["pm_store"]
+        state["report_str"] = pm_state["report_str"]
+        state["mode"]       = POSTMORTEM
+        state["is_locked"]  = True
+        state["file_path"]  = ""
 
-        print(f"\n  Session locked to postmortem report.\n")
+        if state.get("pm_memory") is None:
+            state["pm_memory"] = make_memory(llm)
 
-        return {
-            "mode":       POSTMORTEM,
-            "pm_store":   pm_store,
-            "pm_memory":  pm_memory,
-            "report_str": report_str,
-            "response":   report_str,
-            "file_path":  "",
-            "llm":        llm,
-        }
+        return state
 
-    # Pipeline already run — chat about the report
-    memory  = state["pm_memory"]
-    store   = state["pm_store"]
+    # Q&A against the postmortem store
+    memory  = state.get("pm_memory") or make_memory(llm)
     history = get_history(memory)
-    context = retrieve(store, state["user_input"], PM_TOP_K)
+    context = retrieve(state["pm_store"], state["user_input"], PM_TOP_K)
+    filled  = prompt.format(
+        report  = state.get("report_str", ""),
+        history = history,
+        context = context,
+        input   = state["user_input"],
+    )
+    result   = llm.invoke(filled)
+    response = str(result.content)
 
-    response = llm.invoke(prompt.format(
-        report=state["report_str"],
-        history=history,
-        context=context,
-        input=state["user_input"]
-    ))
-    answer = str(response.content)
-
-    save_turn(memory, state["user_input"], answer)
-    return {"response": answer, "pm_memory": memory, "mode": POSTMORTEM, "llm": llm}
+    save_turn(memory, state["user_input"], response)
+    state["pm_memory"] = memory
+    state["response"]  = response
+    return state

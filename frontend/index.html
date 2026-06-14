@@ -558,11 +558,68 @@ async function sendMessage() {
 }
 
 // ── Upload ────────────────────────────────────────────────────────────────────
+let acceptedExtensions = new Set([".pdf", ".docx", ".doc", ".txt", ".log"]); // fallback default
+let maxUploadSizeMB    = 50;  // fallback default — overwritten by /upload/extensions
+
+async function loadAcceptedExtensions() {
+  try {
+    const res  = await fetch("/upload/extensions");
+    const data = await res.json();
+    document.getElementById("file-input").setAttribute("accept", data.accept);
+    acceptedExtensions = new Set(data.extensions);
+    if (data.max_size_mb) maxUploadSizeMB = data.max_size_mb;
+  } catch {
+    document.getElementById("file-input").setAttribute("accept", ".pdf,.docx,.doc,.txt,.log");
+  }
+}
+
+function validateFile(file) {
+  /**
+   * Client-side validation — runs before anything is sent to the server.
+   * Returns {ok: true} or {ok: false, message: "..."}
+   *
+   * Two checks:
+   *   1. Extension — must be in the set fetched from /upload/extensions
+   *   2. Size      — must be under maxUploadSizeMB
+   *
+   * Why both: extension gives instant "wrong file type" feedback.
+   * Size gives instant "too big" feedback instead of a 60s upload timeout.
+   * Server still enforces both independently — client checks are UX only.
+   */
+  const ext     = "." + file.name.split(".").pop().toLowerCase();
+  const sizeMB  = file.size / (1024 * 1024);
+
+  if (!acceptedExtensions.has(ext)) {
+    const supported = [...acceptedExtensions].join(", ");
+    return {
+      ok     : false,
+      message: `Unsupported file type "${ext}". Supported: ${supported}`,
+    };
+  }
+
+  if (sizeMB > maxUploadSizeMB) {
+    return {
+      ok     : false,
+      message: `File too large (${sizeMB.toFixed(1)}MB). Maximum is ${maxUploadSizeMB}MB.`,
+    };
+  }
+
+  return { ok: true };
+}
+
 async function handleFileUpload(input) {
   if (!activeToken || !input.files.length) return;
-  const file     = input.files[0];
-  input.value    = "";
-  const isLog    = file.name.endsWith(".log");
+  const file = input.files[0];
+  input.value = "";
+
+  // Validate before touching the network
+  const validation = validateFile(file);
+  if (!validation.ok) {
+    appendMessage("ai", `⚠️ ${validation.message}`);
+    return;
+  }
+
+  const isLog    = file.name.toLowerCase().endsWith(".log");
   const formData = new FormData();
   formData.append("file", file);
 
