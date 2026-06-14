@@ -1,38 +1,125 @@
 # Location: backend/rag/ingest.py
+import hashlib
+import logging
 from pathlib import Path
 
 from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import RAG_CHUNK_SIZE, RAG_CHUNK_OVERLAP, RAG_TOP_K
+from auth.models import SessionFile
 from core.retriever import get_embeddings
-from router import normalize_path
+from core.faiss_store import save_store
+from config import RAG_CHUNK_SIZE, RAG_CHUNK_OVERLAP
+
+logger = logging.getLogger(__name__)
+
+_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=RAG_CHUNK_SIZE,
+    chunk_overlap=RAG_CHUNK_OVERLAP,
+)
 
 
-def load_and_chunk(filepath: str) -> list:
-    path = normalize_path(filepath)
-    ext  = path.suffix.lower()
+def hash_file(file_path: str) -> str:
+    """SHA-256 hex digest of file contents — used for duplicate detection."""
+    h = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
-    if ext == ".pdf":
-        docs = PyPDFLoader(str(path)).load()
-    elif ext in {".docx", ".doc"}:
-        docs = Docx2txtLoader(str(path)).load()
-    else:
-        docs = TextLoader(str(path), encoding="utf-8").load()
 
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=RAG_CHUNK_SIZE,
-        chunk_overlap=RAG_CHUNK_OVERLAP,
+async def is_duplicate(db: AsyncSession, session_id: int, file_hash: str) -> bool:
+    """
+    Check if this exact file (by content hash) was already ingested
+    into this session's store.
+
+    Why DB not in-memory set: the in-memory set is lost on restart.
+    DB check survives restarts so duplicate detection works even after
+    the server comes back up.
+    """
+    result = await db.execute(
+        select(SessionFile).where(
+            SessionFile.session_id == session_id,
+            SessionFile.file_hash  == file_hash,
+        )
     )
-    return splitter.split_documents(docs)
+    return result.scalar_one_or_none() is not None
 
 
-def build_store(filepath: str) -> FAISS:
-    chunks = load_and_chunk(filepath)
-    return FAISS.from_documents(chunks, get_embeddings())
+async def record_file(
+    db        : AsyncSession,
+    session_id: int,
+    filename  : str,
+    file_hash : str,
+) -> None:
+    """Insert a file record into session_files after successful ingestion."""
+    db.add(SessionFile(
+        session_id=session_id,
+        filename=filename,
+        file_hash=file_hash,
+    ))
+    await db.commit()
 
 
-def add_to_store(store: FAISS, filepath: str) -> None:
-    chunks = load_and_chunk(filepath)
-    store.add_documents(chunks)
+def _load_documents(file_path: str):
+    suffix = Path(file_path).suffix.lower()
+    if suffix == ".pdf":
+        loader = PyPDFLoader(file_path)
+    elif suffix in {".docx", ".doc"}:
+        loader = Docx2txtLoader(file_path)
+    else:
+        loader = TextLoader(file_path, encoding="utf-8")
+    return loader.load()
+
+
+def build_rag_store(
+    file_path : str,
+    user_id   : int,
+    token     : str,
+) -> FAISS:
+    """
+    Load a document, chunk it, embed it, build a fresh FAISS store
+    and persist to disk immediately.
+
+    Note: duplicate check happens in the route BEFORE calling this —
+    this function always builds unconditionally.
+    """
+    docs   = _load_documents(file_path)
+    chunks = _splitter.split_documents(docs)
+    store  = FAISS.from_documents(chunks, get_embeddings())
+    save_store(store, user_id, token, "rag")
+    logger.info(
+        "Built RAG store: %d chunks from '%s' for user=%s token=%s",
+        len(chunks), Path(file_path).name, user_id, token,
+    )
+    return store
+
+
+def add_to_store(
+    store     : FAISS,
+    file_path : str,
+    user_id   : int,
+    token     : str,
+) -> FAISS:
+    """
+    Merge a new document into an existing FAISS store and re-persist.
+
+    Why merge not rebuild: rebuilding re-embeds all prior documents on every
+    upload — slow and expensive for large stores. merge_from() adds only the
+    new vectors. FAISS cannot delete old vectors so modified files will have
+    both old and new chunks — the RAG system prompt instructs the LLM to
+    prefer the most recent and consolidate duplicates.
+    """
+    docs      = _load_documents(file_path)
+    chunks    = _splitter.split_documents(docs)
+    new_store = FAISS.from_documents(chunks, get_embeddings())
+    store.merge_from(new_store)
+    save_store(store, user_id, token, "rag")
+    logger.info(
+        "Merged %d chunks from '%s' — store total: %d vectors",
+        len(chunks), Path(file_path).name, store.index.ntotal,
+    )
+    return store

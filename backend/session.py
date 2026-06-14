@@ -1,79 +1,346 @@
 # Location: backend/session.py
-import asyncio
-import time
-from typing import Any
-from core.llm import get_llm
-from graph.builder import build_graph, make_initial_state
+"""
+Session management — in-memory cache backed by Postgres.
 
-# session_id -> {"graph", "state", "llm", "lock", "last_accessed"}
+Architecture:
+    Postgres (sessions table) is the source of truth.
+    _sessions dict is a write-through in-memory cache for active sessions.
+
+    Read:  check _sessions first (fast), fall back to DB + disk restore (slow)
+    Write: always write to DB + disk, then update _sessions
+    TTL:   _sessions entries evicted after idle; DB row stays until user deletes
+
+This means:
+    - Server restarts are transparent — sessions restore from DB + FAISS disk
+    - Multiple sessions per user, fully independent
+    - Every session tied to a user_id — no cross-user access possible
+"""
+import asyncio
+import logging
+import time
+from typing import Any, Optional
+
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from auth.database import AsyncSessionLocal
+from auth.models import Session as SessionModel
+from core.llm import get_llm, get_rag_llm, get_pm_llm
+from core.faiss_store import load_store, delete_store
+from core.memory import restore_memory_from_db, make_memory
+from graph.builder import build_graph, make_initial_state
+from config import SESSION_TTL_SECONDS, SESSION_CLEANUP_INTERVAL_SECONDS
+
+logger = logging.getLogger(__name__)
+
+# In-memory cache: token → session dict
+# Keys: graph, state, llm, lock, last_accessed, db_id, user_id, token
 _sessions: dict[str, dict[str, Any]] = {}
 
 
-def create_session(session_id: str) -> None:
-    llm = get_llm()
-    _sessions[session_id] = {
+# ── Internal helpers ──────────────────────────────────────────────────────────
+
+def _make_in_memory_session(
+    db_id    : int,
+    user_id  : int,
+    token    : str,
+    chat_llm ,
+    rag_llm  ,
+    pm_llm   ,
+    state    : dict,
+) -> dict[str, Any]:
+    return {
+        "db_id":         db_id,
+        "user_id":       user_id,
+        "token":         token,
         "graph":         build_graph(),
-        "state":         make_initial_state(llm),
-        "llm":           llm,
-        # Each session gets its own asyncio.Lock.
-        # This ensures only one request at a time can read or write this
-        # session's state, preventing race conditions when the frontend
-        # fires concurrent requests (e.g. chat + memory poll simultaneously).
+        "state":         state,
+        # Three separate LLM instances at different temperatures.
+        # chat_llm=0.7 for natural conversation.
+        # rag_llm=0.3 for accurate document Q&A.
+        # pm_llm=0.1 for reproducible postmortem analysis.
+        "chat_llm":      chat_llm,
+        "rag_llm":       rag_llm,
+        "pm_llm":        pm_llm,
         "lock":          asyncio.Lock(),
-        # Tracks when this session was last used — needed for TTL cleanup (issue #4).
         "last_accessed": time.time(),
     }
 
 
-def get_session(session_id: str) -> dict[str, Any]:
-    if session_id not in _sessions:
-        create_session(session_id)
-    session = _sessions[session_id]
-    session["last_accessed"] = time.time()
+async def _load_from_db(token: str, user_id: int) -> Optional[dict[str, Any]]:
+    """
+    Restore a session from Postgres + FAISS disk into the in-memory cache.
+    Returns None if the session doesn't exist or doesn't belong to user_id.
+    """
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(SessionModel).where(
+                SessionModel.token   == token,
+                SessionModel.user_id == user_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if not row:
+            return None
+
+        chat_llm = get_llm()
+        rag_llm  = get_rag_llm()
+        pm_llm   = get_pm_llm()
+        state    = make_initial_state(chat_llm)
+
+        # Restore mode + lock state from DB
+        state["mode"]      = row.mode
+        state["is_locked"] = row.is_locked
+
+        # Restore FAISS stores from disk
+        rag_store = load_store(user_id, token, "rag")
+        pm_store  = load_store(user_id, token, "pm")
+        if rag_store:
+            state["rag_store"] = rag_store
+        if pm_store:
+            state["pm_store"]  = pm_store
+
+        # Restore LangChain memory — full summary + last 20 raw messages.
+        # Memory objects seeded with the correct LLM for their mode so that
+        # summarisation at the token limit uses the right temperature too.
+        memories = await restore_memory_from_db(db, row.id, chat_llm, rag_llm, pm_llm)
+        state["chat_memory"] = memories["chat_memory"]
+        state["rag_memory"]  = memories["rag_memory"]
+        state["pm_memory"]   = memories["pm_memory"]
+
+        session = _make_in_memory_session(row.id, user_id, token, chat_llm, rag_llm, pm_llm, state)
+        _sessions[token] = session
+
+        logger.info(
+            "Restored session token=%s user=%d mode=%s from DB",
+            token, user_id, row.mode,
+        )
+        return session
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+async def create_session(user_id: int, db: AsyncSession) -> dict[str, Any]:
+    """
+    Create a new session in Postgres and warm the in-memory cache.
+    Returns the in-memory session dict (includes token for the response).
+    """
+    chat_llm = get_llm()
+    rag_llm  = get_rag_llm()
+    pm_llm   = get_pm_llm()
+    state    = make_initial_state(chat_llm)
+    state["chat_memory"] = make_memory(chat_llm)
+
+    row = SessionModel(user_id=user_id)   # token auto-generated by model default
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+
+    session = _make_in_memory_session(row.id, user_id, row.token, chat_llm, rag_llm, pm_llm, state)
+    _sessions[row.token] = session
+
+    logger.info("Created session token=%s for user=%d", row.token, user_id)
     return session
 
 
-def delete_session(session_id: str) -> None:
-    _sessions.pop(session_id, None)
+async def get_session(
+    token   : str,
+    user_id : int,
+) -> Optional[dict[str, Any]]:
+    """
+    Get a session by token, verifying it belongs to user_id.
+
+    Check order:
+        1. In-memory cache (fast path — most requests go here)
+        2. DB + disk restore (after TTL eviction or server restart)
+        3. Return None if not found or wrong user
+
+    Ownership is always verified — even cache hits check user_id so a
+    token that somehow leaks to another user is rejected.
+    """
+    session = _sessions.get(token)
+
+    if session:
+        # Verify ownership even on cache hit
+        if session["user_id"] != user_id:
+            logger.warning(
+                "Session ownership mismatch: token=%s claimed by user=%d owned by user=%d",
+                token, user_id, session["user_id"],
+            )
+            return None
+        session["last_accessed"] = time.time()
+        return session
+
+    # Not in cache — try DB restore
+    return await _load_from_db(token, user_id)
 
 
-def run_graph(session_id: str, user_input: str = "", file_path: str = "") -> dict[str, Any]:
-    """Synchronous graph runner — used by CLI and internally by run_graph_async."""
-    session = get_session(session_id)
-    state   = session["state"]
+async def delete_session(token: str, user_id: int, db: AsyncSession) -> bool:
+    """
+    Delete a session from memory, Postgres, and FAISS disk.
+    Returns False if session not found or doesn't belong to user_id.
+    """
+    # Verify ownership before deleting
+    result = await db.execute(
+        select(SessionModel).where(
+            SessionModel.token   == token,
+            SessionModel.user_id == user_id,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if not row:
+        return False
 
+    await db.delete(row)
+    await db.commit()
+
+    _sessions.pop(token, None)
+    delete_store(user_id, token)
+
+    logger.info("Deleted session token=%s for user=%d", token, user_id)
+    return True
+
+
+async def list_sessions(user_id: int, db: AsyncSession) -> list[dict]:
+    """
+    Return all sessions for a user, newest first.
+    Used to populate the sidebar.
+    """
+    result = await db.execute(
+        select(SessionModel)
+        .where(SessionModel.user_id == user_id)
+        .order_by(SessionModel.last_accessed_at.desc())
+    )
+    rows = result.scalars().all()
+    return [
+        {
+            "token":            row.token,
+            "name":             row.name,
+            "mode":             row.mode,
+            "is_locked":        row.is_locked,
+            "created_at":       row.created_at.isoformat(),
+            "last_accessed_at": row.last_accessed_at.isoformat(),
+        }
+        for row in rows
+    ]
+
+
+async def update_session_name(
+    token: str, user_id: int, name: str, db: AsyncSession
+) -> None:
+    """Auto-update session name from first message or filename."""
+    await db.execute(
+        update(SessionModel)
+        .where(SessionModel.token == token, SessionModel.user_id == user_id)
+        .values(name=name[:100])
+    )
+    await db.commit()
+
+
+async def update_session_mode(
+    token: str, user_id: int, mode: str, db: AsyncSession,
+    is_locked: bool = False,
+) -> None:
+    """Sync mode and lock state back to DB after graph runs."""
+    await db.execute(
+        update(SessionModel)
+        .where(SessionModel.token == token, SessionModel.user_id == user_id)
+        .values(mode=mode, is_locked=is_locked)
+    )
+    await db.commit()
+
+
+async def update_session_faiss_path(
+    token: str, user_id: int, path: str, db: AsyncSession
+) -> None:
+    """Record where the FAISS store lives after first upload."""
+    from config import FAISS_STORE_DIR
+    await db.execute(
+        update(SessionModel)
+        .where(SessionModel.token == token, SessionModel.user_id == user_id)
+        .values(faiss_store_path=path)
+    )
+    await db.commit()
+
+
+async def touch_session(token: str, user_id: int, db: AsyncSession) -> None:
+    """Update last_accessed_at in DB (called on every request)."""
+    from datetime import datetime, timezone
+    await db.execute(
+        update(SessionModel)
+        .where(SessionModel.token == token, SessionModel.user_id == user_id)
+        .values(last_accessed_at=datetime.now(timezone.utc))
+    )
+    await db.commit()
+
+
+# ── Graph runner ──────────────────────────────────────────────────────────────
+
+def run_graph(token: str, user_id: int, user_input: str = "", file_path: str = "") -> dict:
+    """
+    Synchronous graph runner — called via run_in_executor from run_graph_async.
+    Uses the cached session — must be loaded before calling this.
+    """
+    session = _sessions.get(token)
+    if not session or session["user_id"] != user_id:
+        raise ValueError(f"Session {token} not in cache — call get_session first")
+
+    state = session["state"]
     state["user_input"] = user_input
     state["file_path"]  = file_path
 
     result = session["graph"].invoke(state)
-
     session["state"] = result
     return result
 
 
 async def run_graph_async(
-    session_id: str,
+    token     : str,
+    user_id   : int,
     user_input: str = "",
-    file_path: str = "",
-) -> dict[str, Any]:
+    file_path : str = "",
+) -> dict:
     """
-    Async wrapper for run_graph.
-
-    Why: run_graph() triggers the full LangGraph postmortem pipeline which
-    includes FAISS embedding and multiple blocking LLM calls — potentially
-    30-90 seconds of CPU/IO work. Calling it directly inside an async FastAPI
-    route would freeze the event loop for ALL users during that time.
-
-    run_in_executor(None, ...) hands the synchronous function off to the
-    default ThreadPoolExecutor so the event loop stays free to handle other
-    requests. The awaiting route still waits for the result, but nothing
-    else is blocked.
+    Async wrapper — moves blocking LangGraph pipeline off the event loop
+    onto a ThreadPoolExecutor worker so other requests aren't frozen.
     """
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
-        None,           # None = use the default ThreadPoolExecutor
-        run_graph,      # the synchronous function
-        session_id,
-        user_input,
-        file_path,
+        None, run_graph, token, user_id, user_input, file_path,
     )
+
+
+# ── TTL cleanup ───────────────────────────────────────────────────────────────
+
+def cleanup_expired_sessions() -> int:
+    """
+    Evict idle sessions from the in-memory cache only.
+    DB rows and FAISS disk stores are intentionally kept so users can
+    reconnect after idle periods and get their context back.
+    Only DELETE /session removes from DB + disk.
+    """
+    now     = time.time()
+    cutoff  = now - SESSION_TTL_SECONDS
+    expired = [t for t, s in _sessions.items() if s["last_accessed"] < cutoff]
+    for token in expired:
+        _sessions.pop(token, None)
+    return len(expired)
+
+
+async def start_cleanup_task() -> None:
+    """Background task — started once in FastAPI lifespan, runs forever."""
+    logger.info(
+        "Session cleanup task started — TTL=%ds interval=%ds",
+        SESSION_TTL_SECONDS, SESSION_CLEANUP_INTERVAL_SECONDS,
+    )
+    while True:
+        await asyncio.sleep(SESSION_CLEANUP_INTERVAL_SECONDS)
+        try:
+            removed = cleanup_expired_sessions()
+            if removed:
+                logger.info(
+                    "Cleanup: evicted %d idle session(s) from memory. Active: %d",
+                    removed, len(_sessions),
+                )
+        except Exception:
+            logger.exception("Error in session cleanup — will retry next interval")

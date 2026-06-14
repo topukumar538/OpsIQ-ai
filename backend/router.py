@@ -1,40 +1,54 @@
 # Location: backend/router.py
-import re
+"""
+File type classifier for the /upload route.
+
+IMPORTANT — scope of this module:
+    This classifier is ONLY called from /upload after a file has already
+    been written to a temp path. It should NEVER be called on raw user
+    chat messages.
+
+    The original implementation used Path(input).exists() + looks_like_path()
+    heuristics to distinguish "is this a file path or a message?". That caused
+    false positives when users typed things like:
+        "Check config.log for errors"   → misclassified as log_file
+        "See https://docs.co/guide.pdf" → misclassified as rag_file
+        "Fixed in version 3.0.1"        → triggered looks_like_path()
+
+    In the web app, messages go through /chat and files go through /upload —
+    they are already separated at the route level. The classifier only needs
+    to answer one question: given a real file path, what kind of file is it?
+    Path existence checks and message-vs-path heuristics are not needed.
+"""
 from pathlib import Path
+
 from config import RAG_EXTENSIONS, POSTMORTEM_EXTENSION
 
 
-def normalize_path(text: str) -> Path:
-    # Strip quotes and convert Windows path to WSL /mnt/c/...
-    p = text.strip().strip('"').strip("'").replace("\\", "/")
-    win = re.match(r"^([A-Za-z]):/(.*)$", p)
-    if win:
-        p = f"/mnt/{win.group(1).lower()}/{win.group(2)}"
-    return Path(p).expanduser().resolve()
+def classify_input(file_path: str) -> str:
+    """
+    Classify an uploaded file by its extension.
+
+    Returns one of:
+        "rag_file"   — PDF, DOCX, DOC, TXT → goes to RAG ingestion
+        "log_file"   — LOG → goes to postmortem pipeline
+        "bad_path"   — unsupported extension → rejected with error message
+
+    Args:
+        file_path: absolute path to a temp file that has already been
+                   written to disk by the /upload route. This must always
+                   be a real file path — never a raw user message string.
+    """
+    suffix = Path(file_path).suffix.lower()
+
+    if suffix in RAG_EXTENSIONS:
+        return "rag_file"
+
+    if suffix == POSTMORTEM_EXTENSION:
+        return "log_file"
+
+    return "bad_path"
 
 
-def looks_like_path(text: str) -> bool:
-    p = text.strip().strip('"').strip("'")
-    return bool(p) and (
-        "\\" in p or "/" in p or
-        re.match(r"^[A-Za-z]:", p) is not None or
-        "." in Path(p).suffix
-    )
-
-
-def is_rag_file(text: str) -> bool:
-    path = normalize_path(text)
-    return path.exists() and path.is_file() and path.suffix.lower() in RAG_EXTENSIONS
-
-
-def is_log_file(text: str) -> bool:
-    path = normalize_path(text)
-    return path.exists() and path.is_file() and path.suffix.lower() == POSTMORTEM_EXTENSION
-
-
-def classify_input(text: str) -> str:
-    """Returns: 'rag_file' | 'log_file' | 'bad_path' | 'message'"""
-    if is_rag_file(text):   return "rag_file"
-    if is_log_file(text):   return "log_file"
-    if looks_like_path(text): return "bad_path"
-    return "message"
+def supported_extensions() -> set[str]:
+    """Return all extensions the app accepts — used for client-side validation hint."""
+    return RAG_EXTENSIONS | {POSTMORTEM_EXTENSION}

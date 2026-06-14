@@ -1,587 +1,687 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>OpsIQ</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --bg: #0a0a0a;
-      --surface: #141414;
-      --surface2: #1e1e1e;
-      --surface3: #252525;
-      --border: #2a2a2a;
-      --border2: #333;
-      --text: #f0f0f0;
-      --muted: #888;
-      --faint: #444;
-      --accent: #7c6ff7;
-      --accent2: #6358e8;
-      --accent-bg: rgba(124,111,247,0.1);
-      --green: #4ade80;
-      --green-bg: rgba(74,222,128,0.08);
-      --amber: #fbbf24;
-      --amber-bg: rgba(251,191,36,0.08);
-      --red: #f87171;
-    }
-    html, body { height: 100%; overflow: hidden; }
-    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; }
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>OpsIQ</title>
+<style>
+  :root {
+    --bg:        #0f1117;
+    --sidebar:   #161b27;
+    --surface:   #1e2535;
+    --border:    #2a3147;
+    --accent:    #4f8ef7;
+    --accent-dim:#1e3a6e;
+    --text:      #e2e8f0;
+    --muted:     #64748b;
+    --danger:    #ef4444;
+    --chat-bg:   #131720;
+    --user-msg:  #1e2d4a;
+    --ai-msg:    #1a2030;
+    --radius:    8px;
+    --font:      'Inter', system-ui, sans-serif;
+    --mono:      'JetBrains Mono', 'Fira Code', monospace;
+  }
 
-    /* ── navbar ── */
-    nav {
-      position: fixed; top: 0; left: 0; right: 0; height: 52px;
-      background: var(--surface); border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 0 16px; z-index: 100; flex-shrink: 0;
-    }
-    .brand { display: flex; align-items: center; gap: 9px; }
-    .brand-logo {
-      width: 28px; height: 28px; border-radius: 7px;
-      background: var(--accent); display: flex; align-items: center;
-      justify-content: center; font-size: 12px; font-weight: 700; color: #fff;
-    }
-    .brand-name { font-size: 14px; font-weight: 600; letter-spacing: -0.2px; }
-    .nav-right { display: flex; align-items: center; gap: 6px; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); display: flex; }
 
-    .mode-pill {
-      padding: 3px 10px; border-radius: 20px; font-size: 11px;
-      font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; transition: all 0.3s;
-    }
-    .mode-chat       { background: var(--surface3); color: var(--muted); border: 1px solid var(--border2); }
-    .mode-rag        { background: var(--green-bg); color: var(--green); border: 1px solid rgba(74,222,128,0.2); }
-    .mode-postmortem { background: var(--accent-bg); color: var(--accent); border: 1px solid rgba(124,111,247,0.25); }
+  /* ── Sidebar ─────────────────────────────────────────────────────────── */
+  #sidebar {
+    width: 260px; min-width: 260px;
+    background: var(--sidebar);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    height: 100vh;
+  }
 
-    /* user badge */
-    .user-badge {
-      display: flex; align-items: center; gap: 7px;
-      padding: 4px 10px 4px 6px;
-      border-radius: 20px; background: var(--surface2);
-      border: 1px solid var(--border2);
-      font-size: 12px; color: var(--muted);
-    }
-    .user-avatar {
-      width: 20px; height: 20px; border-radius: 50%;
-      background: var(--accent); display: flex; align-items: center;
-      justify-content: center; font-size: 9px; font-weight: 700; color: #fff;
-      flex-shrink: 0;
-    }
+  #sidebar-header {
+    padding: 16px 14px 12px;
+    border-bottom: 1px solid var(--border);
+  }
 
-    .btn {
-      padding: 5px 11px; border-radius: 7px; font-size: 12px; font-weight: 500;
-      background: var(--surface2); border: 1px solid var(--border2);
-      color: var(--muted); cursor: pointer; transition: all 0.15s; font-family: inherit;
-    }
-    .btn:hover { background: var(--surface3); color: var(--text); border-color: var(--border2); }
+  #sidebar-header h1 {
+    font-size: 16px; font-weight: 700;
+    color: var(--accent); letter-spacing: -0.3px;
+    margin-bottom: 10px;
+  }
 
-    /* logout button — subtle red tint on hover */
-    .btn-logout:hover {
-      background: rgba(248,113,113,0.08);
-      border-color: rgba(248,113,113,0.25);
-      color: var(--red);
-    }
+  #new-session-btn {
+    width: 100%;
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 13px; font-weight: 500;
+    padding: 8px 12px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    display: flex; align-items: center; gap: 6px;
+    transition: background 0.15s;
+  }
+  #new-session-btn:hover { background: #254a8a; }
 
-    /* ── layout ── */
-    .layout { display: flex; height: 100vh; padding-top: 52px; overflow: hidden; }
+  #sessions-list {
+    flex: 1; overflow-y: auto; padding: 8px 6px;
+  }
+  #sessions-list::-webkit-scrollbar { width: 4px; }
+  #sessions-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
-    /* ── sidebar ── */
-    .sidebar {
-      width: 0; overflow: hidden; flex-shrink: 0;
-      border-right: 1px solid var(--border);
-      background: var(--surface); transition: width 0.25s ease;
-      display: flex; flex-direction: column;
-    }
-    .sidebar.open { width: 260px; }
-    .sidebar-head {
-      padding: 14px 16px; border-bottom: 1px solid var(--border);
-      font-size: 10px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: 0.8px; color: var(--faint);
-    }
-    .sidebar-body { flex: 1; overflow-y: auto; padding: 12px; font-size: 12px; color: var(--muted); }
-    .sidebar-body::-webkit-scrollbar { width: 3px; }
-    .sidebar-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
-    .mem-summary {
-      background: var(--accent-bg); border: 1px solid rgba(124,111,247,0.12);
-      border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; line-height: 1.6;
-    }
-    .mem-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--accent); margin-bottom: 5px; }
-    .mem-msg { padding: 5px 0; border-bottom: 1px solid var(--border); line-height: 1.5; }
-    .mem-msg:last-child { border-bottom: none; }
-    .role-h { color: #60a5fa; font-weight: 500; }
-    .role-a { color: var(--green); font-weight: 500; }
+  .session-item {
+    display: flex; align-items: center;
+    padding: 8px 10px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    gap: 8px;
+    margin-bottom: 2px;
+    border: 1px solid transparent;
+    transition: background 0.12s;
+    position: relative;
+  }
+  .session-item:hover { background: var(--surface); }
+  .session-item.active {
+    background: var(--surface);
+    border-color: var(--border);
+  }
 
-    /* ── main ── */
-    main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+  .session-icon { font-size: 14px; flex-shrink: 0; }
+  .session-info { flex: 1; min-width: 0; }
+  .session-name {
+    font-size: 13px; font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: var(--text);
+  }
+  .session-meta {
+    font-size: 11px; color: var(--muted);
+    margin-top: 1px;
+  }
 
-    /* ── messages ── */
-    #msgs {
-      flex: 1; overflow-y: auto; padding: 28px 0 8px;
-      display: flex; flex-direction: column;
-    }
-    #msgs::-webkit-scrollbar { width: 3px; }
-    #msgs::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  .session-delete {
+    opacity: 0;
+    background: none; border: none;
+    color: var(--muted); cursor: pointer;
+    font-size: 14px; padding: 2px 4px;
+    border-radius: 4px;
+    transition: opacity 0.12s, color 0.12s;
+    flex-shrink: 0;
+  }
+  .session-item:hover .session-delete { opacity: 1; }
+  .session-delete:hover { color: var(--danger); }
 
-    .msg-row {
-      display: flex; gap: 12px; padding: 4px 24px;
-      max-width: 740px; width: 100%; margin: 0 auto;
-      animation: up 0.18s ease;
-    }
-    @keyframes up { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+  .sessions-empty {
+    color: var(--muted); font-size: 13px;
+    text-align: center; padding: 24px 12px;
+    line-height: 1.6;
+  }
 
-    .avatar {
-      width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 10px; font-weight: 600; margin-top: 3px;
-    }
-    .av-user { background: var(--accent); color: #fff; }
-    .av-ai   { background: var(--surface3); border: 1px solid var(--border2); color: var(--muted); }
+  #sidebar-footer {
+    padding: 12px 14px;
+    border-top: 1px solid var(--border);
+    font-size: 12px; color: var(--muted);
+    display: flex; align-items: center; gap: 8px;
+  }
+  #sidebar-footer .avatar {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--accent-dim);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: var(--accent);
+    flex-shrink: 0;
+  }
+  #user-email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-    .msg-body { flex: 1; min-width: 0; }
-    .msg-name { font-size: 11px; font-weight: 600; margin-bottom: 3px; }
-    .name-user { color: var(--accent); }
-    .name-ai   { color: var(--muted); }
-    .msg-text  { font-size: 14px; line-height: 1.75; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+  /* ── Main area ───────────────────────────────────────────────────────── */
+  #main {
+    flex: 1; display: flex; flex-direction: column;
+    height: 100vh; overflow: hidden;
+  }
 
-    /* ── welcome ── */
-    .welcome {
-      flex: 1; display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      text-align: center; padding: 40px 24px; gap: 0;
-    }
-    .welcome-logo {
-      width: 48px; height: 48px; border-radius: 13px; background: var(--accent);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 18px;
-    }
-    .welcome h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; margin-bottom: 8px; }
-    .welcome p  { font-size: 13px; color: var(--muted); line-height: 1.65; max-width: 380px; margin-bottom: 22px; }
-    .chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
-    .chip {
-      padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 500;
-      border: 1px solid var(--border2); color: var(--muted); background: var(--surface2);
-    }
+  /* ── Topbar ──────────────────────────────────────────────────────────── */
+  #topbar {
+    height: 52px;
+    background: var(--sidebar);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center;
+    padding: 0 16px; gap: 12px;
+    flex-shrink: 0;
+  }
+  #session-title {
+    font-size: 14px; font-weight: 600; color: var(--text);
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #mode-badge {
+    font-size: 11px; font-weight: 600; padding: 3px 10px;
+    border-radius: 20px; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .mode-chat      { background: #1a2f1a; color: #4ade80; }
+  .mode-rag       { background: #1a2040; color: #60a5fa; }
+  .mode-postmortem{ background: #2d1a1a; color: #f87171; }
 
-    /* ── sys ── */
-    .sys { display: flex; justify-content: center; padding: 6px 24px; animation: up 0.18s ease; }
-    .sys span {
-      font-size: 11px; color: var(--muted); background: var(--surface2);
-      border: 1px solid var(--border); padding: 3px 12px; border-radius: 20px;
-    }
+  #upload-btn {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); font-size: 13px; padding: 6px 12px;
+    border-radius: var(--radius); cursor: pointer;
+    display: flex; align-items: center; gap: 6px;
+    transition: border-color 0.15s;
+  }
+  #upload-btn:hover { border-color: var(--accent); }
+  #file-input { display: none; }
 
-    /* ── typing ── */
-    .typing-row { display: flex; gap: 12px; padding: 4px 24px; max-width: 740px; width: 100%; margin: 0 auto; }
-    .dots { display: flex; gap: 4px; align-items: center; padding: 8px 2px; }
-    .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--faint); animation: blink 1.2s infinite; }
-    .dot:nth-child(2) { animation-delay: 0.2s; }
-    .dot:nth-child(3) { animation-delay: 0.4s; }
-    @keyframes blink { 0%,80%,100% { opacity: 0.2; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1); } }
+  /* ── Chat area ───────────────────────────────────────────────────────── */
+  #chat-area {
+    flex: 1; overflow-y: auto;
+    padding: 20px 0;
+    background: var(--chat-bg);
+  }
+  #chat-area::-webkit-scrollbar { width: 4px; }
+  #chat-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
-    /* ── report panel ── */
-    #report-panel {
-      display: none; margin: 0 24px 6px; border: 1px solid rgba(124,111,247,0.2);
-      border-radius: 10px; overflow: hidden; max-width: 740px;
-      margin-left: auto; margin-right: auto;
-    }
-    .report-head {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 9px 14px; background: var(--accent-bg);
-      border-bottom: 1px solid rgba(124,111,247,0.12);
-    }
-    .report-head-left { display: flex; align-items: center; gap: 8px; }
-    .report-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--accent); }
-    .report-head-right { display: flex; align-items: center; gap: 6px; }
-    .copy-btn {
-      padding: 3px 9px; border-radius: 5px; font-size: 11px; font-weight: 500;
-      background: var(--surface2); border: 1px solid var(--border2);
-      color: var(--muted); cursor: pointer; transition: all 0.15s; font-family: inherit;
-    }
-    .copy-btn:hover { background: var(--surface3); color: var(--text); }
-    .copy-btn.copied { color: var(--green); border-color: rgba(74,222,128,0.3); }
-    .report-toggle { background: none; border: none; cursor: pointer; color: var(--faint); font-size: 11px; padding: 2px 6px; border-radius: 4px; transition: color 0.15s; font-family: inherit; }
-    .report-toggle:hover { color: var(--muted); }
-    #report-body-wrap {
-      resize: vertical; overflow: auto; min-height: 120px; height: 220px;
-      background: var(--surface); position: relative;
-    }
-    #report-body { font-size: 12px; color: var(--muted); padding: 14px; white-space: pre-wrap; line-height: 1.6; min-height: 100%; }
+  .message {
+    max-width: 760px; margin: 0 auto 16px;
+    padding: 0 20px;
+  }
+  .message-inner {
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    font-size: 14px; line-height: 1.7;
+    white-space: pre-wrap;
+  }
+  .user .message-inner   { background: var(--user-msg); color: var(--text); }
+  .ai   .message-inner   { background: var(--ai-msg);   color: var(--text); border: 1px solid var(--border); }
 
-    /* ── bottom ── */
-    .bottom { padding: 10px 24px 14px; background: var(--bg); border-top: 1px solid var(--border); flex-shrink: 0; }
-    #progress { display: none; font-size: 12px; color: var(--accent); background: var(--accent-bg); border: 1px solid rgba(124,111,247,0.12); border-radius: 7px; padding: 7px 12px; margin-bottom: 8px; max-width: 740px; margin-left: auto; margin-right: auto; }
+  .message-role {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.06em; margin-bottom: 6px; color: var(--muted);
+  }
+  .user .message-role { color: var(--accent); }
 
-    .input-box {
-      display: flex; align-items: flex-end; gap: 6px; max-width: 740px;
-      margin: 0 auto; background: var(--surface); border: 1px solid var(--border2);
-      border-radius: 12px; padding: 8px 8px 8px 12px; transition: border-color 0.15s;
-    }
-    .input-box:focus-within { border-color: var(--accent); }
-    .input-box.drag-over { border-color: var(--accent); background: var(--accent-bg); }
+  #empty-state {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    height: 100%; color: var(--muted); text-align: center;
+    padding: 40px;
+  }
+  #empty-state h2 { font-size: 20px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+  #empty-state p  { font-size: 14px; line-height: 1.7; max-width: 360px; }
 
-    #file-inp { display: none; }
+  /* ── Report panel ────────────────────────────────────────────────────── */
+  #report-panel {
+    display: none;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    max-height: 240px; overflow-y: auto;
+    padding: 12px 16px;
+    flex-shrink: 0;
+  }
+  #report-panel.visible { display: block; }
+  #report-panel pre {
+    font-family: var(--mono); font-size: 12px;
+    color: var(--text); white-space: pre-wrap;
+  }
+  #report-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  #report-header span { font-size: 12px; font-weight: 600; color: var(--muted); }
+  #copy-report-btn {
+    font-size: 12px; padding: 3px 10px;
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--muted); border-radius: 4px; cursor: pointer;
+  }
+  #copy-report-btn:hover { color: var(--text); }
 
-    .plus-btn {
-      width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
-      background: var(--surface2); border: 1px solid var(--border2);
-      color: var(--muted); cursor: pointer; display: flex; align-items: center;
-      justify-content: center; font-size: 18px; font-weight: 300; transition: all 0.15s;
-      line-height: 1; font-family: inherit;
-    }
-    .plus-btn:hover { background: var(--surface3); color: var(--text); border-color: var(--accent); }
+  /* ── Progress ────────────────────────────────────────────────────────── */
+  #progress-bar {
+    display: none;
+    padding: 10px 16px;
+    background: var(--accent-dim);
+    border-top: 1px solid var(--accent);
+    font-size: 13px; color: var(--accent);
+    flex-shrink: 0;
+  }
+  #progress-bar.visible { display: block; }
 
-    #inp {
-      flex: 1; background: none; border: none; outline: none; color: var(--text);
-      font-size: 14px; font-family: 'Inter', sans-serif; resize: none;
-      max-height: 160px; line-height: 1.65; padding: 3px 0;
-    }
-    #inp::placeholder { color: var(--faint); }
+  /* ── Input area ──────────────────────────────────────────────────────── */
+  #input-area {
+    padding: 12px 16px;
+    background: var(--sidebar);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  #input-row {
+    display: flex; gap: 8px; align-items: flex-end;
+    max-width: 760px; margin: 0 auto;
+  }
+  #msg-input {
+    flex: 1;
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); font-size: 14px; font-family: var(--font);
+    padding: 10px 14px;
+    border-radius: var(--radius); resize: none;
+    min-height: 42px; max-height: 160px;
+    outline: none; line-height: 1.5;
+    transition: border-color 0.15s;
+  }
+  #msg-input:focus { border-color: var(--accent); }
+  #msg-input::placeholder { color: var(--muted); }
 
-    .send-btn {
-      width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
-      background: var(--accent); border: none; color: #fff; cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 14px; transition: all 0.15s; font-family: inherit;
-    }
-    .send-btn:hover:not(:disabled) { background: var(--accent2); }
-    .send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  #send-btn {
+    background: var(--accent); border: none;
+    color: #fff; font-size: 14px; font-weight: 600;
+    padding: 10px 18px; border-radius: var(--radius);
+    cursor: pointer; transition: opacity 0.15s;
+    white-space: nowrap;
+  }
+  #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  #send-btn:not(:disabled):hover { opacity: 0.85; }
 
-    .hint { text-align: center; font-size: 11px; color: var(--faint); margin-top: 7px; }
-  </style>
+  /* ── No session overlay ──────────────────────────────────────────────── */
+  #no-session {
+    display: none;
+    flex: 1; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: var(--muted); text-align: center; padding: 40px;
+  }
+  #no-session.visible { display: flex; }
+  #no-session h2 { font-size: 18px; font-weight: 600; color: var(--text); margin-bottom: 10px; }
+  #no-session p  { font-size: 14px; margin-bottom: 20px; }
+  #no-session button {
+    background: var(--accent); border: none; color: #fff;
+    font-size: 14px; font-weight: 600; padding: 10px 24px;
+    border-radius: var(--radius); cursor: pointer;
+  }
+</style>
 </head>
 <body>
 
-<!-- Navbar -->
-<nav>
-  <div class="brand">
-    <div class="brand-logo">IQ</div>
-    <span class="brand-name">OpsIQ</span>
+<!-- ── Sidebar ─────────────────────────────────────────────────────────────── -->
+<div id="sidebar">
+  <div id="sidebar-header">
+    <h1>⚡ OpsIQ</h1>
+    <button id="new-session-btn" onclick="newSession()">
+      <span>＋</span> New session
+    </button>
   </div>
-  <div class="nav-right">
-    <span id="mode-pill" class="mode-pill mode-chat">Chat</span>
 
-    <!-- user badge — populated on load -->
-    <div class="user-badge" id="user-badge" style="display:none">
-      <div class="user-avatar" id="user-avatar">?</div>
-      <span id="user-name">…</span>
-    </div>
-
-    <button class="btn" onclick="toggleMemory()">Memory</button>
-    <button class="btn" onclick="newSession()">New session</button>
-    <button class="btn btn-logout" onclick="doLogout()">Sign out</button>
+  <div id="sessions-list">
+    <div class="sessions-empty">No sessions yet.<br>Start one above.</div>
   </div>
-</nav>
 
-<div class="layout">
+  <div id="sidebar-footer">
+    <div class="avatar" id="user-avatar">?</div>
+    <span id="user-email">Loading...</span>
+  </div>
+</div>
 
-  <!-- Sidebar -->
-  <aside class="sidebar" id="sidebar">
-    <div class="sidebar-head">Memory</div>
-    <div class="sidebar-body" id="mem-content">
-      <p style="color:var(--faint);font-size:12px">No memory yet.</p>
-    </div>
-  </aside>
+<!-- ── Main ───────────────────────────────────────────────────────────────── -->
+<div id="main">
 
-  <main>
-    <!-- Messages -->
-    <div id="msgs">
-      <div class="welcome" id="welcome">
-        <div class="welcome-logo">IQ</div>
-        <h1>Welcome to OpsIQ</h1>
-        <p>Your intelligent ops assistant — chat freely, query documents, or drop a log file for a full postmortem analysis.</p>
-        <div class="chips">
-          <span class="chip">💬 Chat</span>
-          <span class="chip">📄 RAG &mdash; PDF / DOCX / TXT</span>
-          <span class="chip">🔍 PostMortem &mdash; LOG</span>
-        </div>
+  <!-- Topbar -->
+  <div id="topbar">
+    <span id="session-title" style="color:var(--muted)">Select or create a session</span>
+    <span id="mode-badge" class="mode-chat" style="display:none">Chat</span>
+    <button id="upload-btn" onclick="document.getElementById('file-input').click()" style="display:none">
+      📎 Upload file
+    </button>
+    <input id="file-input" type="file"
+      onchange="handleFileUpload(this)"/>
+  </div>
+
+  <!-- No session selected state -->
+  <div id="no-session" class="visible">
+    <h2>Welcome to OpsIQ</h2>
+    <p>Create a new session to start chatting, upload documents for RAG analysis, or run a postmortem on a log file.</p>
+    <button onclick="newSession()">＋ Start new session</button>
+  </div>
+
+  <!-- Chat content (hidden until session selected) -->
+  <div id="chat-content" style="display:none; flex:1; flex-direction:column; overflow:hidden;">
+    <div id="chat-area">
+      <div id="empty-state">
+        <h2>New session</h2>
+        <p>Send a message to start chatting, or upload a document (PDF, DOCX, TXT) or log file to get started.</p>
       </div>
     </div>
 
-    <!-- Report panel -->
+    <div id="progress-bar">⏳ Processing...</div>
+
     <div id="report-panel">
-      <div class="report-head">
-        <div class="report-head-left">
-          <span class="report-title">Postmortem report</span>
-        </div>
-        <div class="report-head-right">
-          <button class="copy-btn" id="copy-btn" onclick="copyReport()">Copy</button>
-          <button class="report-toggle" id="rtoggle" onclick="toggleReport()">▲ collapse</button>
-        </div>
+      <div id="report-header">
+        <span>📋 POSTMORTEM REPORT</span>
+        <button id="copy-report-btn" onclick="copyReport()">Copy</button>
       </div>
-      <div id="report-body-wrap">
-        <pre id="report-body"></pre>
-      </div>
+      <pre id="report-content"></pre>
     </div>
 
-    <!-- Bottom bar -->
-    <div class="bottom"
-         ondragover="onDragOver(event)"
-         ondragleave="onDragLeave()"
-         ondrop="onDrop(event)">
-      <div id="progress"></div>
-      <input type="file" id="file-inp" accept=".pdf,.docx,.doc,.txt,.log" onchange="onFileSelect(event)"/>
-      <div class="input-box" id="input-box">
-        <button class="plus-btn" onclick="document.getElementById('file-inp').click()" title="Attach file (PDF, DOCX, TXT, LOG)">+</button>
-        <textarea id="inp" rows="1" placeholder="Message OpsIQ..." onkeydown="onKey(event)" oninput="resize(this)"></textarea>
-        <button class="send-btn" id="send-btn" onclick="send()" title="Send (Enter)">↑</button>
+    <div id="input-area">
+      <div id="input-row">
+        <textarea id="msg-input" rows="1" placeholder="Message OpsIQ..."
+          onkeydown="handleKey(event)"
+          oninput="autoResize(this)"></textarea>
+        <button id="send-btn" onclick="sendMessage()">Send</button>
       </div>
-      <p class="hint">+ to attach &nbsp;·&nbsp; Enter to send &nbsp;·&nbsp; Shift+Enter for new line</p>
     </div>
-  </main>
+  </div>
+
 </div>
 
 <script>
-const API = "";          // same origin — no prefix needed
-let sid = null, memOpen = false, streaming = false;
+// ── State ─────────────────────────────────────────────────────────────────────
+let activeToken   = null;   // current session token
+let isStreaming   = false;
+let reportText    = "";
+let allSessions   = [];     // cached from /sessions
 
-/* ── Auth guard — runs first ── */
-async function checkAuth() {
+// ── Init ──────────────────────────────────────────────────────────────────────
+window.addEventListener("DOMContentLoaded", async () => {
+  await loadUserInfo();
+  await loadAcceptedExtensions();
+  await loadSessions();
+});
+
+async function loadAcceptedExtensions() {
   try {
-    const r = await fetch('/auth/me', { credentials: 'include' });
-    if (!r.ok) {
-      window.location.href = '/login';
-      return false;
-    }
-    const user = await r.json();
-    // Populate user badge
-    document.getElementById('user-name').textContent   = user.username;
-    document.getElementById('user-avatar').textContent = user.username[0].toUpperCase();
-    document.getElementById('user-badge').style.display = 'flex';
-    return true;
+    const res  = await fetch("/upload/extensions");
+    const data = await res.json();
+    document.getElementById("file-input").setAttribute("accept", data.accept);
   } catch {
-    window.location.href = '/login';
-    return false;
+    // fallback — hardcoded only as a safety net if the endpoint fails
+    document.getElementById("file-input").setAttribute("accept", ".pdf,.docx,.doc,.txt,.log");
   }
 }
 
-async function init() {
-  const authed = await checkAuth();
-  if (!authed) return;
-
-  const r = await fetch(`${API}/session`, { method: 'POST', credentials: 'include' });
-  sid = (await r.json()).session_id;
+async function loadUserInfo() {
+  try {
+    const res = await fetch("/auth/me");
+    if (!res.ok) { window.location.href = "/login"; return; }
+    const data = await res.json();
+    document.getElementById("user-email").textContent  = data.email;
+    document.getElementById("user-avatar").textContent = data.email[0].toUpperCase();
+  } catch { window.location.href = "/login"; }
 }
 
-const H = (x = {}) => ({ 'x-session-id': sid, ...x });
-
-/* ── Logout ── */
-async function doLogout() {
-  await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
-  window.location.href = '/login';
+// ── Sessions ──────────────────────────────────────────────────────────────────
+async function loadSessions() {
+  try {
+    const res  = await fetch("/sessions");
+    const data = await res.json();
+    allSessions = data.sessions || [];
+    renderSessions();
+  } catch (e) { console.error("Failed to load sessions", e); }
 }
 
-/* ── Session ── */
+function renderSessions() {
+  const list = document.getElementById("sessions-list");
+  if (!allSessions.length) {
+    list.innerHTML = '<div class="sessions-empty">No sessions yet.<br>Start one above.</div>';
+    return;
+  }
+  list.innerHTML = allSessions.map(s => `
+    <div class="session-item ${s.token === activeToken ? 'active' : ''}"
+         onclick="switchSession('${s.token}')" data-token="${s.token}">
+      <span class="session-icon">${modeIcon(s.mode)}</span>
+      <div class="session-info">
+        <div class="session-name">${escHtml(s.name)}</div>
+        <div class="session-meta">${s.mode} · ${timeAgo(s.last_accessed_at)}</div>
+      </div>
+      <button class="session-delete" onclick="deleteSession(event,'${s.token}')" title="Delete session">✕</button>
+    </div>
+  `).join("");
+}
+
+function modeIcon(mode) {
+  return mode === "rag" ? "📄" : mode === "postmortem" ? "🔍" : "💬";
+}
+
 async function newSession() {
-  if (!confirm('Start a new session? Current context will be lost.')) return;
-  await fetch(`${API}/session`, { method: 'DELETE', headers: H(), credentials: 'include' });
-  sid = null;
-  document.getElementById('msgs').innerHTML = '<div class="welcome" id="welcome"><div class="welcome-logo">IQ</div><h1>Welcome to OpsIQ</h1><p>Your intelligent ops assistant — chat freely, query documents, or drop a log file for a full postmortem analysis.</p><div class="chips"><span class="chip">💬 Chat</span><span class="chip">📄 RAG — PDF / DOCX / TXT</span><span class="chip">🔍 PostMortem — LOG</span></div></div>';
-  document.getElementById('report-panel').style.display = 'none';
-  setMode('chat');
-  const r = await fetch(`${API}/session`, { method: 'POST', credentials: 'include' });
-  sid = (await r.json()).session_id;
-  sys('New session started.');
+  const res  = await fetch("/session", { method: "POST" });
+  const data = await res.json();
+  await loadSessions();
+  await switchSession(data.token);
 }
 
-/* ── Mode ── */
-function setMode(m) {
-  const p = document.getElementById('mode-pill');
-  const labels = { chat: 'Chat', rag: 'RAG', postmortem: 'PostMortem' };
-  p.className = `mode-pill mode-${m}`;
-  p.textContent = labels[m] || m;
-}
-async function refreshMode() {
-  const r = await fetch(`${API}/mode`, { headers: H(), credentials: 'include' });
-  setMode((await r.json()).mode);
+async function switchSession(token) {
+  activeToken = token;
+
+  // Update sidebar active state
+  document.querySelectorAll(".session-item").forEach(el => {
+    el.classList.toggle("active", el.dataset.token === token);
+  });
+
+  // Show chat UI
+  document.getElementById("no-session").classList.remove("visible");
+  document.getElementById("chat-content").style.display = "flex";
+
+  // Clear chat area
+  document.getElementById("chat-area").innerHTML =
+    '<div id="empty-state"><h2>Loading session...</h2></div>';
+  document.getElementById("report-panel").classList.remove("visible");
+  document.getElementById("progress-bar").classList.remove("visible");
+
+  // Load session state
+  const modeRes  = await fetch("/session/mode",   { headers: sessionHeader() });
+  const modeData = await modeRes.json();
+  updateModeBadge(modeData.mode);
+
+  // Update topbar title
+  const s = allSessions.find(s => s.token === token);
+  document.getElementById("session-title").textContent = s ? s.name : "Session";
+  document.getElementById("upload-btn").style.display = "flex";
+  document.getElementById("mode-badge").style.display  = "inline-block";
+
+  // Reset chat area
+  document.getElementById("chat-area").innerHTML =
+    '<div id="empty-state"><h2>Session loaded</h2><p>Continue your conversation or upload a file.</p></div>';
 }
 
-/* ── Memory ── */
-async function toggleMemory() {
-  memOpen = !memOpen;
-  document.getElementById('sidebar').classList.toggle('open', memOpen);
-  if (memOpen) await loadMem();
+async function deleteSession(e, token) {
+  e.stopPropagation();
+  if (!confirm("Delete this session? This cannot be undone.")) return;
+
+  const headers = { "x-session-token": token };
+  await fetch("/session", { method: "DELETE", headers });
+
+  if (activeToken === token) {
+    activeToken = null;
+    document.getElementById("no-session").classList.add("visible");
+    document.getElementById("chat-content").style.display = "none";
+    document.getElementById("upload-btn").style.display   = "none";
+    document.getElementById("mode-badge").style.display   = "none";
+    document.getElementById("session-title").textContent  = "Select or create a session";
+  }
+  await loadSessions();
 }
-async function loadMem() {
-  const r  = await fetch(`${API}/memory`, { headers: H(), credentials: 'include' });
-  const d  = await r.json();
-  const el = document.getElementById('mem-content');
-  let h = '';
-  if (d.summary) h += `<div class="mem-summary"><div class="mem-label">Summary</div>${d.summary}</div>`;
-  if (d.messages?.length) {
-    h += `<div class="mem-label" style="margin-bottom:6px">Buffer · ${d.messages.length}</div>`;
-    d.messages.forEach(m => {
-      const cls = m.role === 'human' ? 'role-h' : 'role-a';
-      h += `<div class="mem-msg"><span class="${cls}">${m.role === 'human' ? 'You' : 'AI'}</span><br/>${m.content}</div>`;
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+function sessionHeader() {
+  return { "x-session-token": activeToken, "Content-Type": "application/json" };
+}
+
+function handleKey(e) {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
+function autoResize(el) {
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 160) + "px";
+}
+
+async function sendMessage() {
+  if (!activeToken || isStreaming) return;
+  const input = document.getElementById("msg-input");
+  const msg   = input.value.trim();
+  if (!msg) return;
+
+  input.value = "";
+  input.style.height = "auto";
+  removeEmptyState();
+  appendMessage("user", msg);
+
+  isStreaming = true;
+  document.getElementById("send-btn").disabled = true;
+
+  const aiEl = appendMessage("ai", "");
+
+  try {
+    const res = await fetch("/chat", {
+      method : "POST",
+      headers: sessionHeader(),
+      body   : JSON.stringify({ message: msg }),
     });
-  }
-  el.innerHTML = h || '<p style="color:var(--faint);font-size:12px">No memory yet.</p>';
-}
-
-/* ── Messages ── */
-function removeWelcome() { document.getElementById('welcome')?.remove(); }
-function addMsg(role, text = '') {
-  removeWelcome();
-  const msgs = document.getElementById('msgs');
-  const row  = document.createElement('div');
-  row.className = 'msg-row';
-  const isUser = role === 'user';
-  const initials = isUser
-    ? (document.getElementById('user-avatar')?.textContent || 'U')
-    : 'AI';
-  row.innerHTML = `
-    <div class="avatar ${isUser ? 'av-user' : 'av-ai'}">${initials}</div>
-    <div class="msg-body">
-      <div class="msg-name ${isUser ? 'name-user' : 'name-ai'}">${isUser ? (document.getElementById('user-name')?.textContent || 'You') : 'OpsIQ'}</div>
-      <div class="msg-text"></div>
-    </div>`;
-  msgs.appendChild(row);
-  msgs.scrollTop = msgs.scrollHeight;
-  return row.querySelector('.msg-text');
-}
-function sys(text) {
-  removeWelcome();
-  const msgs = document.getElementById('msgs');
-  const el   = document.createElement('div');
-  el.className = 'sys';
-  el.innerHTML = `<span>${text}</span>`;
-  msgs.appendChild(el);
-  msgs.scrollTop = msgs.scrollHeight;
-}
-function addTyping() {
-  const msgs = document.getElementById('msgs');
-  const row  = document.createElement('div');
-  row.className = 'typing-row'; row.id = 'typing';
-  row.innerHTML = `<div class="avatar av-ai">AI</div><div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>`;
-  msgs.appendChild(row);
-  msgs.scrollTop = msgs.scrollHeight;
-}
-function rmTyping() { document.getElementById('typing')?.remove(); }
-
-/* ── Chat ── */
-async function send() {
-  const el  = document.getElementById('inp');
-  const msg = el.value.trim();
-  if (!msg || streaming) return;
-  el.value = ''; resize(el);
-  addMsg('user', msg);
-  addTyping();
-  streaming = true;
-  document.getElementById('send-btn').disabled = true;
-
-  const res = await fetch(`${API}/chat`, {
-    method      : 'POST',
-    headers     : H({ 'Content-Type': 'application/json' }),
-    credentials : 'include',
-    body        : JSON.stringify({ message: msg }),
-  });
-
-  rmTyping();
-  const bubble = addMsg('ai');
-  const reader = res.body.getReader();
-  const dec    = new TextDecoder();
-  let buf = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    const lines = buf.split('\n'); buf = lines.pop();
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const tok = line.slice(6);
-      if (tok === '[DONE]') break;
-      bubble.textContent += tok;
-      document.getElementById('msgs').scrollTop = 99999;
-    }
-  }
-
-  streaming = false;
-  document.getElementById('send-btn').disabled = false;
-  if (memOpen) await loadMem();
-}
-function onKey(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }
-function resize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 160) + 'px'; }
-
-/* ── File upload ── */
-function onDragOver(e) { e.preventDefault(); document.getElementById('input-box').classList.add('drag-over'); }
-function onDragLeave() { document.getElementById('input-box').classList.remove('drag-over'); }
-function onDrop(e) { e.preventDefault(); onDragLeave(); const f = e.dataTransfer.files[0]; if (f) upload(f); }
-function onFileSelect(e) { const f = e.target.files[0]; if (f) upload(f); e.target.value = ''; }
-
-async function upload(file) {
-  const ext  = file.name.split('.').pop().toLowerCase();
-  const prog = document.getElementById('progress');
-  prog.style.display = 'block';
-  prog.textContent   = `Uploading '${file.name}'...`;
-
-  const fd = new FormData();
-  fd.append('file', file);
-  const res = await fetch(`${API}/upload`, {
-    method      : 'POST',
-    headers     : H(),
-    credentials : 'include',
-    body        : fd,
-  });
-
-  if (ext === 'log') {
-    const contentType = res.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      const d = await res.json();
-      prog.style.display = 'none';
-      sys(`⚠ ${d.message}`);
-      return;
-    }
-
     const reader = res.body.getReader();
     const dec    = new TextDecoder();
-    let buf = '';
+    let   buf    = "";
+
     while (true) {
-      const { done, value } = await reader.read();
+      const { value, done } = await reader.read();
       if (done) break;
       buf += dec.decode(value, { stream: true });
-      const lines = buf.split('\n'); buf = lines.pop();
+      const lines = buf.split("\n");
+      buf = lines.pop();
       for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const raw = line.slice(6);
-        if (raw === '[DONE]') break;
-        try {
-          const evt = JSON.parse(raw);
-          if (evt.event === 'progress') { prog.textContent = `⚙  ${evt.text}`; }
-          else if (evt.event === 'report') {
-            document.getElementById('report-body').textContent = evt.text;
-            document.getElementById('report-panel').style.display = 'block';
-            sys('Postmortem report ready — ask anything about the incident.');
-          }
-        } catch {}
+        if (!line.startsWith("data: ")) continue;
+        const tok = line.slice(6);
+        if (tok === "[DONE]") break;
+        aiEl.querySelector(".message-inner").textContent += tok;
+        scrollToBottom();
       }
     }
-    setMode('postmortem');
-    prog.style.display = 'none';
-  } else {
-    const d = await res.json();
-    prog.style.display = 'none';
-    if (d.status === 'error' || d.status === 'locked') sys(`⚠ ${d.message}`);
-    else { sys(d.message); await refreshMode(); }
+  } catch (e) {
+    aiEl.querySelector(".message-inner").textContent = "Error: " + e.message;
+  }
+
+  isStreaming = false;
+  document.getElementById("send-btn").disabled = false;
+
+  // Refresh session name in sidebar (may have auto-updated)
+  await loadSessions();
+  renderSessions();
+}
+
+// ── Upload ────────────────────────────────────────────────────────────────────
+async function handleFileUpload(input) {
+  if (!activeToken || !input.files.length) return;
+  const file     = input.files[0];
+  input.value    = "";
+  const isLog    = file.name.endsWith(".log");
+  const formData = new FormData();
+  formData.append("file", file);
+
+  if (isLog) {
+    document.getElementById("progress-bar").textContent = `⏳ Processing ${file.name}...`;
+    document.getElementById("progress-bar").classList.add("visible");
+  }
+
+  try {
+    const res = await fetch("/upload", {
+      method : "POST",
+      headers: { "x-session-token": activeToken },
+      body   : formData,
+    });
+
+    if (isLog) {
+      // SSE stream for postmortem
+      const reader = res.body.getReader();
+      const dec    = new TextDecoder();
+      let   buf    = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6);
+          if (raw === "[DONE]") break;
+          try {
+            const evt = JSON.parse(raw);
+            if (evt.event === "progress") {
+              document.getElementById("progress-bar").textContent = `⏳ ${evt.text}`;
+            } else if (evt.event === "report") {
+              reportText = evt.text;
+              document.getElementById("report-content").textContent = reportText;
+              document.getElementById("report-panel").classList.add("visible");
+            }
+          } catch {}
+        }
+      }
+      document.getElementById("progress-bar").classList.remove("visible");
+    } else {
+      const data = await res.json();
+      if (data.status === "duplicate") {
+        appendMessage("ai", `ℹ️ ${data.message}`);
+      } else if (data.status === "ok") {
+        appendMessage("ai", `✅ ${data.message}`);
+      } else {
+        appendMessage("ai", `⚠️ ${data.message}`);
+      }
+    }
+
+    // Refresh mode badge + session list
+    const modeRes = await fetch("/session/mode", { headers: { "x-session-token": activeToken }});
+    const modeData = await modeRes.json();
+    updateModeBadge(modeData.mode);
+    await loadSessions();
+    renderSessions();
+
+  } catch (e) {
+    document.getElementById("progress-bar").classList.remove("visible");
+    appendMessage("ai", "Upload failed: " + e.message);
   }
 }
 
-/* ── Report ── */
-function toggleReport() {
-  const wrap = document.getElementById('report-body-wrap');
-  const btn  = document.getElementById('rtoggle');
-  const collapsed = wrap.style.display === 'none';
-  wrap.style.display = collapsed ? 'block' : 'none';
-  btn.textContent = collapsed ? '▲ collapse' : '▼ expand';
-}
-async function copyReport() {
-  const text = document.getElementById('report-body').textContent;
-  const btn  = document.getElementById('copy-btn');
-  await navigator.clipboard.writeText(text);
-  btn.textContent = 'Copied!'; btn.classList.add('copied');
-  setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function appendMessage(role, text) {
+  removeEmptyState();
+  const area = document.getElementById("chat-area");
+  const div  = document.createElement("div");
+  div.className = `message ${role}`;
+  div.innerHTML = `
+    <div class="message-role">${role === "user" ? "You" : "OpsIQ"}</div>
+    <div class="message-inner">${escHtml(text)}</div>
+  `;
+  area.appendChild(div);
+  scrollToBottom();
+  return div;
 }
 
-init();
+function removeEmptyState() {
+  const es = document.getElementById("empty-state");
+  if (es) es.remove();
+}
+
+function scrollToBottom() {
+  const area = document.getElementById("chat-area");
+  area.scrollTop = area.scrollHeight;
+}
+
+function updateModeBadge(mode) {
+  const badge = document.getElementById("mode-badge");
+  badge.className = `mode-badge mode-${mode}`;
+  badge.textContent = mode === "postmortem" ? "Postmortem" : mode === "rag" ? "RAG" : "Chat";
+}
+
+function copyReport() {
+  navigator.clipboard.writeText(reportText);
+  const btn = document.getElementById("copy-report-btn");
+  btn.textContent = "Copied!";
+  setTimeout(() => btn.textContent = "Copy", 1500);
+}
+
+function timeAgo(iso) {
+  const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (diff < 60)   return "just now";
+  if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+  if (diff < 86400)return `${Math.floor(diff/3600)}h ago`;
+  return `${Math.floor(diff/86400)}d ago`;
+}
+
+function escHtml(str) {
+  return str.replace(/&/g,"&amp;").replace(/</g,"&lt;")
+            .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
 </script>
 </body>
 </html>
