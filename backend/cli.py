@@ -5,14 +5,14 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 from core.llm import get_llm
 from graph.builder import build_graph, make_initial_state
 from graph.state import POSTMORTEM, RAG
-from router import classify_input
+from router import classify_cli_input
 
 
 def show_memory(state: dict) -> None:
     mode   = state["mode"]
     memory = (
         state["chat_memory"] if mode == "chat" else
-        state["rag_memory"]  if mode == "rag"  else
+        state["rag_memory"]  if mode == RAG    else
         state["pm_memory"]
     )
     if not memory:
@@ -52,23 +52,20 @@ def main():
             show_memory(state)
             continue
 
-        kind = classify_input(user_input)
+        kind = classify_cli_input(user_input)
 
         if kind == "bad_path":
             print("  [!] Unsupported or invalid file.\n")
             continue
 
-        # RAG mode — reject log files
         if state["mode"] == RAG and kind == "log_file":
             print("  [!] Log files cannot be added in RAG mode. Open a new session for PostMortem analysis.\n")
             continue
 
-        # Postmortem locked
         if state["mode"] == POSTMORTEM and kind in {"rag_file", "log_file"}:
             print("  [!] Session locked to current report. Open a new session.\n")
             continue
 
-        # Update state input
         if kind in {"rag_file", "log_file"}:
             state["user_input"] = ""
             state["file_path"]  = user_input
@@ -76,15 +73,21 @@ def main():
             state["user_input"] = user_input
             state["file_path"]  = ""
 
-        # Run graph
         state = graph.invoke(state)
+
+        if state.get("rag_warning"):
+            print(f"  [!] {state['rag_warning']}\n")
+            state["rag_warning"] = ""
+            continue
 
         if state["response"] and kind == "message":
             print(f"\nAI: {state['response']}\n")
-        elif state["mode"] == POSTMORTEM and not state.get("_report_printed"):
+        elif state["mode"] == POSTMORTEM and state.get("report_str") and not state.get("_report_printed"):
             print(state["report_str"])
             state["_report_printed"] = True
             print("  Session locked. Ask questions about this report.\n")
+        elif kind in {"rag_file", "log_file"} and state["mode"] == RAG:
+            print("  Document loaded. Ask questions about it.\n")
 
 
 if __name__ == "__main__":

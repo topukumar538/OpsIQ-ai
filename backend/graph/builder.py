@@ -10,6 +10,13 @@ from core.memory import make_memory
 
 def _route_from_start(state: OpsState) -> str:
     """Entry routing — dispatch to whichever mode is active."""
+    file_path = state.get("file_path", "")
+    if file_path:
+        suffix = file_path.rsplit(".", 1)[-1].lower()
+        if suffix == "log":
+            return "postmortem"
+        return "rag"
+
     mode = state.get("mode", "chat")
     if mode == RAG:        return "rag"
     if mode == POSTMORTEM: return "postmortem"

@@ -391,7 +391,7 @@ async function loadAcceptedExtensions() {
 
 async function loadUserInfo() {
   try {
-    const res = await fetch("/auth/me");
+    const res = await fetch("/auth/me", { credentials: "include" });
     if (!res.ok) { window.location.href = "/login"; return; }
     const data = await res.json();
     document.getElementById("user-email").textContent  = data.email;
@@ -402,7 +402,7 @@ async function loadUserInfo() {
 // ── Sessions ──────────────────────────────────────────────────────────────────
 async function loadSessions() {
   try {
-    const res  = await fetch("/sessions");
+    const res  = await fetch("/sessions", { credentials: "include" });
     const data = await res.json();
     allSessions = data.sessions || [];
     renderSessions();
@@ -433,7 +433,7 @@ function modeIcon(mode) {
 }
 
 async function newSession() {
-  const res  = await fetch("/session", { method: "POST" });
+  const res  = await fetch("/session", { method: "POST", credentials: "include" });
   const data = await res.json();
   await loadSessions();
   await switchSession(data.token);
@@ -442,35 +442,52 @@ async function newSession() {
 async function switchSession(token) {
   activeToken = token;
 
-  // Update sidebar active state
   document.querySelectorAll(".session-item").forEach(el => {
     el.classList.toggle("active", el.dataset.token === token);
   });
 
-  // Show chat UI
   document.getElementById("no-session").classList.remove("visible");
   document.getElementById("chat-content").style.display = "flex";
-
-  // Clear chat area
   document.getElementById("chat-area").innerHTML =
     '<div id="empty-state"><h2>Loading session...</h2></div>';
   document.getElementById("report-panel").classList.remove("visible");
   document.getElementById("progress-bar").classList.remove("visible");
 
-  // Load session state
-  const modeRes  = await fetch("/session/mode",   { headers: sessionHeader() });
+  const headers = sessionHeader();
+
+  const modeRes  = await fetch("/session/mode", { headers, credentials: "include" });
   const modeData = await modeRes.json();
   updateModeBadge(modeData.mode);
 
-  // Update topbar title
   const s = allSessions.find(s => s.token === token);
   document.getElementById("session-title").textContent = s ? s.name : "Session";
   document.getElementById("upload-btn").style.display = "flex";
   document.getElementById("mode-badge").style.display  = "inline-block";
 
-  // Reset chat area
-  document.getElementById("chat-area").innerHTML =
-    '<div id="empty-state"><h2>Session loaded</h2><p>Continue your conversation or upload a file.</p></div>';
+  // Restore conversation history and postmortem report
+  document.getElementById("chat-area").innerHTML = "";
+  try {
+    const memRes  = await fetch("/session/memory", { headers, credentials: "include" });
+    const memData = await memRes.json();
+
+    if (memData.report) {
+      reportText = memData.report;
+      document.getElementById("report-content").textContent = reportText;
+      document.getElementById("report-panel").classList.add("visible");
+    }
+
+    if (memData.messages && memData.messages.length) {
+      for (const m of memData.messages) {
+        appendMessage(m.role === "human" ? "user" : "ai", m.content);
+      }
+    } else {
+      document.getElementById("chat-area").innerHTML =
+        '<div id="empty-state"><h2>Session loaded</h2><p>Continue your conversation or upload a file.</p></div>';
+    }
+  } catch {
+    document.getElementById("chat-area").innerHTML =
+      '<div id="empty-state"><h2>Session loaded</h2><p>Continue your conversation or upload a file.</p></div>';
+  }
 }
 
 async function deleteSession(e, token) {
@@ -478,7 +495,7 @@ async function deleteSession(e, token) {
   if (!confirm("Delete this session? This cannot be undone.")) return;
 
   const headers = { "x-session-token": token };
-  await fetch("/session", { method: "DELETE", headers });
+  await fetch("/session", { method: "DELETE", headers, credentials: "include" });
 
   if (activeToken === token) {
     activeToken = null;
@@ -525,6 +542,7 @@ async function sendMessage() {
     const res = await fetch("/chat", {
       method : "POST",
       headers: sessionHeader(),
+      credentials: "include",
       body   : JSON.stringify({ message: msg }),
     });
     const reader = res.body.getReader();
@@ -632,6 +650,7 @@ async function handleFileUpload(input) {
     const res = await fetch("/upload", {
       method : "POST",
       headers: { "x-session-token": activeToken },
+      credentials: "include",
       body   : formData,
     });
 
@@ -677,7 +696,10 @@ async function handleFileUpload(input) {
     }
 
     // Refresh mode badge + session list
-    const modeRes = await fetch("/session/mode", { headers: { "x-session-token": activeToken }});
+    const modeRes = await fetch("/session/mode", {
+      headers: { "x-session-token": activeToken },
+      credentials: "include",
+    });
     const modeData = await modeRes.json();
     updateModeBadge(modeData.mode);
     await loadSessions();

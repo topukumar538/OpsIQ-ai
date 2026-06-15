@@ -28,6 +28,7 @@ from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.models import SessionMemory, SessionMessage
+from config import MAX_TOKEN_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ def make_memory(llm) -> ConversationSummaryBufferMemory:
         warnings.simplefilter("ignore", DeprecationWarning)
         return ConversationSummaryBufferMemory(
             llm=llm,
-            max_token_limit=2000,
+            max_token_limit=MAX_TOKEN_LIMIT,
             return_messages=True,
         )
 
@@ -127,7 +128,9 @@ async def save_memory_to_db(
 async def restore_memory_from_db(
     db         : AsyncSession,
     session_id : int,
-    llm,
+    chat_llm,
+    rag_llm,
+    pm_llm,
 ) -> dict:
     """
     Restore all three memory objects from Postgres.
@@ -145,9 +148,9 @@ async def restore_memory_from_db(
     This matches exactly how Claude and ChatGPT handle long conversations —
     compress the old, keep the recent raw.
     """
-    chat_mem = make_memory(llm)
-    rag_mem  = make_memory(llm)
-    pm_mem   = make_memory(llm)
+    chat_mem = make_memory(chat_llm)
+    rag_mem  = make_memory(rag_llm)
+    pm_mem   = make_memory(pm_llm)
 
     # ── Restore summaries ─────────────────────────────────────────────────────
     result = await db.execute(

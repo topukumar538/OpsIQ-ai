@@ -1,7 +1,9 @@
 # Location: backend/graph/nodes/postmortem.py
 from pathlib import Path
+
 from langchain.prompts import PromptTemplate
 
+from core.llm import get_pm_llm
 from core.memory import make_memory, get_history, save_turn
 from core.retriever import retrieve
 from graph.state import OpsState, POSTMORTEM
@@ -28,30 +30,20 @@ Question: {input}
 def postmortem_node(state: OpsState) -> OpsState:
     """
     Handles both initial log processing and follow-up Q&A in postmortem mode.
-
-    First call (file_path set):
-        - Runs the full postmortem pipeline (log_analyzer → timeline →
-          root_cause → remediation → report_summarizer)
-        - Locks the session so no further uploads are accepted
-        - Memory seeding happens in session.py after pipeline completes
-
-    Subsequent calls (file_path empty, session locked):
-        - Retrieval-augmented Q&A against the postmortem FAISS store
     """
     file_path = state.get("file_path", "")
-    llm       = state["llm"]
+    llm       = get_pm_llm()
 
     if file_path:
         from postmortem.builder import run_postmortem
         log_filename = Path(file_path).name
 
-        # Run the full postmortem sub-pipeline
         pm_state = run_postmortem(
-            log_path     = file_path,
-            log_filename = log_filename,
-            llm          = llm,
-            user_id      = state["user_id"],
-            session_token= state["session_token"],
+            log_path      = file_path,
+            log_filename  = log_filename,
+            llm           = llm,
+            user_id       = state["user_id"],
+            session_token = state["session_token"],
         )
 
         state["pm_store"]   = pm_state["pm_store"]
@@ -61,11 +53,14 @@ def postmortem_node(state: OpsState) -> OpsState:
         state["file_path"]  = ""
 
         if state.get("pm_memory") is None:
-            state["pm_memory"] = make_memory(llm)
+            pm_memory = make_memory(llm)
+            summary = pm_state.get("report_summary", "")
+            if summary:
+                pm_memory.moving_summary_buffer = summary
+            state["pm_memory"] = pm_memory
 
         return state
 
-    # Q&A against the postmortem store
     memory  = state.get("pm_memory") or make_memory(llm)
     history = get_history(memory)
     context = retrieve(state["pm_store"], state["user_input"], PM_TOP_K)

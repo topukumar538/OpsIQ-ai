@@ -1,6 +1,5 @@
 # Location: backend/main.py
 import asyncio
-import hashlib
 import json
 import logging
 import uuid
@@ -22,7 +21,7 @@ from auth.dependencies import get_current_user
 from auth.models import User, SessionFile
 from auth.router import router as auth_router
 from config import FAISS_STORE_DIR, RAG_TOP_K, PM_TOP_K
-from core.memory import save_message_to_db, save_memory_to_db
+from core.memory import save_message_to_db, save_memory_to_db, make_memory
 from graph.state import POSTMORTEM, RAG
 from rag.ingest import hash_file, is_duplicate, record_file, build_rag_store, add_to_store
 from router import classify_input
@@ -41,6 +40,9 @@ from session import (
 )
 
 logger = logging.getLogger(__name__)
+
+_BACKEND_DIR = Path(__file__).resolve().parent
+_FRONTEND_DIR = _BACKEND_DIR.parent / "frontend"
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
@@ -78,13 +80,13 @@ app.include_router(auth_router)
 def home(): return RedirectResponse(url="/login")
 
 @app.get("/login")
-def login_page(): return FileResponse("../frontend/login.html")
+def login_page(): return FileResponse(_FRONTEND_DIR / "login.html")
 
 @app.get("/signup")
-def signup_page(): return FileResponse("../frontend/signup.html")
+def signup_page(): return FileResponse(_FRONTEND_DIR / "signup.html")
 
 @app.get("/app")
-def app_page(): return FileResponse("../frontend/index.html")
+def app_page(): return FileResponse(_FRONTEND_DIR / "index.html")
 
 
 # ── Session dependency ────────────────────────────────────────────────────────
@@ -163,13 +165,20 @@ async def get_memory(session: dict = Depends(get_active_session)):
         state.get("pm_memory")
     )
     if not memory:
-        return {"summary": "", "messages": []}
+        return {
+            "mode"    : mode,
+            "report"  : state.get("report_str", ""),
+            "summary" : "",
+            "messages": [],
+        }
     return {
+        "mode"    : mode,
+        "report"  : state.get("report_str", ""),
         "summary" : memory.moving_summary_buffer or "",
         "messages": [
             {
                 "role"   : "human" if m.type == "human" else "ai",
-                "content": str(m.content)[:200],
+                "content": str(m.content),
             }
             for m in memory.chat_memory.messages
         ],
@@ -205,23 +214,26 @@ async def chat(
             token  = session["token"]
             uid    = session["user_id"]
 
-            # Pick the LLM instance for this mode.
-            # Each has a different temperature tuned for its purpose:
-            # chat=0.7 (natural), rag=0.3 (accurate), pm=0.1 (deterministic)
             if mode == "chat":
-                llm     = session["chat_llm"]
-                memory  = state["chat_memory"]
+                llm = session["chat_llm"]
+                if state.get("chat_memory") is None:
+                    state["chat_memory"] = make_memory(llm)
+                memory = state["chat_memory"]
                 history = get_history(memory)
                 filled  = chat_prompt.format(history=history, input=msg)
             elif mode == RAG:
-                llm     = session["rag_llm"]
-                memory  = state["rag_memory"]
+                llm = session["rag_llm"]
+                if state.get("rag_memory") is None:
+                    state["rag_memory"] = make_memory(llm)
+                memory = state["rag_memory"]
                 history = get_history(memory)
                 context = retrieve(state["rag_store"], msg, RAG_TOP_K)
                 filled  = rag_prompt.format(history=history, context=context, input=msg)
             else:
-                llm     = session["pm_llm"]
-                memory  = state["pm_memory"]
+                llm = session["pm_llm"]
+                if state.get("pm_memory") is None:
+                    state["pm_memory"] = make_memory(llm)
+                memory = state["pm_memory"]
                 history = get_history(memory)
                 context = retrieve(state["pm_store"], msg, PM_TOP_K)
                 filled  = pm_prompt.format(
@@ -341,8 +353,14 @@ async def upload(
             )
             # Auto-name from log filename
             await update_session_name(token, uid, f"PM: {fname}", db)
-            # Record file in DB
             await record_file(db, db_id, fname, file_hash)
+
+            await save_memory_to_db(
+                db, db_id,
+                session["state"].get("chat_memory"),
+                session["state"].get("rag_memory"),
+                session["state"].get("pm_memory"),
+            )
 
             yield f"data: {json.dumps({'event':'report','text':result.get('report_str','')})}\n\n"
             yield "data: [DONE]\n\n"
@@ -363,6 +381,8 @@ async def upload(
                 store = await asyncio.get_running_loop().run_in_executor(
                     None, add_to_store, existing_store, str(tmp_path), uid, token,
                 )
+            if state.get("rag_memory") is None:
+                state["rag_memory"] = make_memory(session["rag_llm"])
 
         tmp_path.unlink(missing_ok=True)
 

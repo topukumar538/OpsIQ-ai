@@ -6,6 +6,7 @@ class PostmortemState(TypedDict):
     llm: Any
     store: Any
     error_counts: dict
+    log_filename: str
     log_analysis: str
     timeline_analysis: str
     root_cause: str

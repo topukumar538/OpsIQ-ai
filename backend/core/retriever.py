@@ -16,9 +16,6 @@ from config import EMBED_MODEL
 
 logger = logging.getLogger(__name__)
 
-# Re-export build_store so graph nodes can import from here
-from rag.ingest import build_rag_store as build_store, add_to_store  # noqa: E402
-
 
 @lru_cache(maxsize=1)
 def get_embeddings() -> HuggingFaceEmbeddings:

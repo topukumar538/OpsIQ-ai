@@ -3,7 +3,7 @@ from pathlib import Path
 from langchain.prompts import PromptTemplate
 
 from core.memory import make_memory, get_history, save_turn
-from core.retriever import build_store, retrieve          # build_store lives in retriever
+from core.retriever import retrieve
 from graph.state import OpsState, RAG
 from config import RAG_TOP_K
 
