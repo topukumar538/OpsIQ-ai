@@ -53,8 +53,30 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from auth.router import limiter
 
-
+from core.retriever import get_embeddings
 # ── Lifespan ──────────────────────────────────────────────────────────────────
+
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     await init_db()
+#     # Preload embeddings model at startup so the first file upload
+#     # doesn't pay the loading cost. get_embeddings() is lru_cached
+#     # so this call warms the cache for all subsequent requests.
+#     logger.info("Preloading embeddings model...")
+#     await asyncio.get_running_loop().run_in_executor(None, get_embeddings)
+#     logger.info("Embeddings model ready.")
+#     cleanup_task = asyncio.create_task(start_cleanup_task())
+#     logger.info("OpsIQ started.")
+#     yield
+#     cleanup_task.cancel()
+#     try:
+#         await cleanup_task
+#     except asyncio.CancelledError:
+#         pass
+#     logger.info("OpsIQ shut down cleanly.")
+
+
+#------------------
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -69,6 +91,8 @@ async def lifespan(app: FastAPI):
         pass
     logger.info("OpsIQ shut down cleanly.")
 
+
+#------------------
 
 app = FastAPI(title="OpsIQ", lifespan=lifespan)
 
@@ -334,10 +358,10 @@ async def upload(
 
     if state["mode"] == RAG and kind == "log_file":
         tmp_path.unlink(missing_ok=True)
-        return {
-            "status" : "error",
-            "message": "Log files cannot be added in RAG mode. Open a new session for postmortem analysis.",
-        }
+        async def _warn():
+            yield f"data: {json.dumps({'event':'error','text':'Log files cannot be added in RAG mode. Open a new session for postmortem analysis.'})}\n\n"
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(_warn(), media_type="text/event-stream")
 
     # ── Duplicate check ───────────────────────────────────────────────────────
     if await is_duplicate(db, db_id, file_hash):
@@ -413,7 +437,14 @@ async def upload(
                         None, add_to_store, existing_store, str(tmp_path), uid, token,
                     )
                 if state.get("rag_memory") is None:
-                    state["rag_memory"] = make_memory(session["rag_llm"])
+                    rag_memory  = make_memory(session["rag_llm"])
+                    chat_memory = state.get("chat_memory")
+                    if chat_memory:
+                        if chat_memory.moving_summary_buffer:
+                            rag_memory.moving_summary_buffer = chat_memory.moving_summary_buffer
+                        for msg in chat_memory.chat_memory.messages:
+                            rag_memory.chat_memory.add_message(msg)
+                    state["rag_memory"] = rag_memory
         except Exception as e:
             logger.exception("RAG ingestion failed for file=%s token=%s", fname, token)
             return {"status": "error", "message": f"Failed to process file: {str(e)}"}

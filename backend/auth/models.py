@@ -41,14 +41,13 @@ class Session(Base):
 
     id              : Mapped[int]        = mapped_column(primary_key=True, autoincrement=True)
     token           : Mapped[str]        = mapped_column(String(64), unique=True, nullable=False, index=True, default=_new_token)
-    user_id         : Mapped[int]        = mapped_column(ForeignKey(User.id), nullable=False, index=True)
+    # CASCADE: deleting a user automatically deletes all their sessions
+    user_id         : Mapped[int]        = mapped_column(ForeignKey(User.id, ondelete="CASCADE"), nullable=False, index=True)
     name            : Mapped[str]        = mapped_column(String(100), nullable=False, default="New session")
     mode            : Mapped[str]        = mapped_column(String(20), nullable=False, default="chat")
     is_locked       : Mapped[bool]       = mapped_column(Boolean, nullable=False, default=False)
     faiss_store_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     # Persisted so the postmortem report survives server restarts.
-    # Without this, the report panel goes blank after Railway redeploys
-    # even though the session, FAISS store, and mode all restore correctly.
     report_str      : Mapped[str]        = mapped_column(Text, nullable=False, default="")
     created_at      : Mapped[datetime]   = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     last_accessed_at: Mapped[datetime]   = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -58,7 +57,8 @@ class SessionFile(Base):
     __tablename__ = "session_files"
 
     id        : Mapped[int]      = mapped_column(primary_key=True, autoincrement=True)
-    session_id: Mapped[int]      = mapped_column(ForeignKey(Session.id), nullable=False, index=True)
+    # CASCADE: deleting a session automatically deletes all its files
+    session_id: Mapped[int]      = mapped_column(ForeignKey(Session.id, ondelete="CASCADE"), nullable=False, index=True)
     filename  : Mapped[str]      = mapped_column(String(255), nullable=False)
     file_hash : Mapped[str]      = mapped_column(String(64), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -67,19 +67,21 @@ class SessionFile(Base):
 class SessionMemory(Base):
     __tablename__ = "session_memory"
 
-    id           : Mapped[int]      = mapped_column(primary_key=True, autoincrement=True)
-    session_id   : Mapped[int]      = mapped_column(ForeignKey(Session.id), unique=True, nullable=False, index=True)
-    chat_summary : Mapped[str]      = mapped_column(Text, nullable=False, default="")
-    rag_summary  : Mapped[str]      = mapped_column(Text, nullable=False, default="")
-    pm_summary   : Mapped[str]      = mapped_column(Text, nullable=False, default="")
-    updated_at   : Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    id          : Mapped[int]      = mapped_column(primary_key=True, autoincrement=True)
+    # CASCADE: deleting a session automatically deletes its memory
+    session_id  : Mapped[int]      = mapped_column(ForeignKey(Session.id, ondelete="CASCADE"), unique=True, nullable=False, index=True)
+    chat_summary: Mapped[str]      = mapped_column(Text, nullable=False, default="")
+    rag_summary : Mapped[str]      = mapped_column(Text, nullable=False, default="")
+    pm_summary  : Mapped[str]      = mapped_column(Text, nullable=False, default="")
+    updated_at  : Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
 class SessionMessage(Base):
     __tablename__ = "session_messages"
 
     id        : Mapped[int]      = mapped_column(primary_key=True, autoincrement=True)
-    session_id: Mapped[int]      = mapped_column(ForeignKey(Session.id), nullable=False, index=True)
+    # CASCADE: deleting a session automatically deletes all its messages
+    session_id: Mapped[int]      = mapped_column(ForeignKey(Session.id, ondelete="CASCADE"), nullable=False, index=True)
     role      : Mapped[str]      = mapped_column(String(10), nullable=False)
     content   : Mapped[str]      = mapped_column(Text, nullable=False)
     mode      : Mapped[str]      = mapped_column(String(20), nullable=False, default="chat")

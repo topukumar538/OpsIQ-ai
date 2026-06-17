@@ -9,9 +9,13 @@ from config import RAG_TOP_K
 
 prompt = PromptTemplate.from_template("""
 You are an expert assistant answering questions from uploaded documents.
-You may receive overlapping or duplicate chunks if the same document was
-uploaded more than once — always consolidate your answer and avoid repeating
-information.
+You have access to both the conversation history and relevant document context.
+
+When answering:
+- Use the conversation history for personal context (names, preferences, prior discussion)
+- Use the document context for factual questions about the uploaded documents
+- If the answer is in neither, say so clearly rather than guessing
+- You may receive overlapping or duplicate chunks — consolidate and avoid repeating
 
 Conversation history:
 {history}
@@ -20,9 +24,6 @@ Relevant document context:
 {context}
 
 Question: {input}
-
-Answer based only on the provided context. If the answer is not in the context,
-say so clearly rather than guessing.
 """.strip())
 
 
@@ -67,19 +68,20 @@ def rag_node(state: OpsState) -> OpsState:
 
         state["mode"] = RAG
 
-        # Seed rag_memory with existing chat history so context isn't lost
+        # Seed rag_memory with full chat history so context isn't lost
         # when switching from chat mode to RAG mode.
-        # Without this, asking "what was my name" in RAG mode after introducing
-        # yourself in chat mode returns nothing — the two memories are separate.
-        # Carrying over the chat summary bridges the gap naturally.
+        # Copy both summary AND raw messages — summary alone is empty for
+        # short conversations that haven't triggered summarisation yet.
         if state.get("rag_memory") is None:
-            rag_memory = make_memory(llm)
+            rag_memory  = make_memory(llm)
             chat_memory = state.get("chat_memory")
-            if chat_memory and chat_memory.moving_summary_buffer:
-                # Carry over the compressed summary of the chat conversation.
-                # Raw messages are not copied — only the summary — so the
-                # rag_memory doesn't get bloated with unrelated chat turns.
-                rag_memory.moving_summary_buffer = chat_memory.moving_summary_buffer
+
+            if chat_memory:
+                if chat_memory.moving_summary_buffer:
+                    rag_memory.moving_summary_buffer = chat_memory.moving_summary_buffer
+                for msg in chat_memory.chat_memory.messages:
+                    rag_memory.chat_memory.add_message(msg)
+
             state["rag_memory"] = rag_memory
 
         return state
