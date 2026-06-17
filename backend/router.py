@@ -1,10 +1,6 @@
 # Location: backend/router.py
 """
 File type classifier for the /upload route and CLI file paths.
-
-IMPORTANT — scope of this module:
-    classify_input() is for real file paths (upload temp files or CLI paths).
-    classify_cli_input() additionally handles plain chat messages for the CLI.
 """
 from pathlib import Path
 
@@ -40,10 +36,26 @@ def classify_cli_input(user_input: str) -> str:
         "rag_file"   — existing path to a RAG document
         "log_file"   — existing path to a log file
         "bad_path"   — path exists but unsupported extension
+        "not_found"  — looks like a file path but doesn't exist on disk
     """
     path = Path(user_input)
+
+    # Check if input looks like a file path even if it doesn't exist —
+    # has a known extension or contains path separators.
+    # Without this, typing a wrong path like /tmp/missing.log silently
+    # becomes a chat message: "AI: I don't know what /tmp/missing.log means."
+    looks_like_path = (
+        "/" in user_input
+        or "\\" in user_input
+        or path.suffix.lower() in RAG_EXTENSIONS | {POSTMORTEM_EXTENSION}
+    )
+
     if path.exists() and path.is_file():
         return classify_input(str(path))
+
+    if looks_like_path:
+        return "not_found"
+
     return "message"
 
 

@@ -59,6 +59,7 @@ def _make_in_memory_session(
         "pm_llm"       : pm_llm,
         "lock"         : asyncio.Lock(),
         "last_accessed": time.time(),
+        "named"        : False,
     }
 
 

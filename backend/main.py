@@ -255,9 +255,11 @@ async def chat(
                 )
 
             # Auto-name session from first human message
-            if not any(m.type == "human" for m in memory.chat_memory.messages):
+            if not session.get("named"):
+                session["named"] = True
                 name = msg[:40] + ("..." if len(msg) > 40 else "")
                 await update_session_name(token, uid, name, db)
+
 
             full = ""
             async for chunk in llm.astream(filled):

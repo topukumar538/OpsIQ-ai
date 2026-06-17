@@ -8,104 +8,23 @@ from graph.state import OpsState, RAG
 from config import RAG_TOP_K
 
 prompt = PromptTemplate.from_template("""
-You are an intelligent assistant that answers questions using retrieved documents.
+You are an expert assistant answering questions from uploaded documents.
+You may receive overlapping or duplicate chunks if the same document was
+uploaded more than once — always consolidate your answer and avoid repeating
+information.
 
-You combine two abilities:
-1. A strict RAG-based document QA system (fact-grounded)
-2. A friendly conversational chatbot
-
----
-
-## INPUTS
-You will receive:
-- Conversation history
-- Retrieved document context (from FAISS, may contain duplicates or overlap)
-
----
-
-## CORE RULES (VERY IMPORTANT)
-- Use ONLY the provided context to answer factual questions.
-- Never hallucinate or assume missing information.
-- If the answer is not in the context, say:
-  "I couldn’t find this in the provided documents."
-- If multiple chunks repeat the same information, merge them into one clean explanation.
-- Do NOT mention chunks, retrieval, or FAISS.
-
----
-
-## CONTEXT
-
-### Conversation History:
+Conversation history:
 {history}
 
-### Retrieved Document Context:
+Relevant document context:
 {context}
 
----
+Question: {input}
 
-## USER QUESTION:
-{input}
-
----
-
-## RESPONSE BEHAVIOR
-
-### 1. Document / Knowledge Questions (default)
-Use when user asks:
-- what is this
-- explain document
-- details, summary, facts
-
-Style:
-- grounded in context
-- clear and structured but conversational
-- merge duplicate information
-- no repetition
-
-Natural tone examples:
-- "From the documents, I can see..."
-- "The context suggests..."
-- "According to the provided information..."
-
----
-
-### 2. Explanation Mode
-Use when user asks:
-- "explain simply"
-- "what does this mean"
-- learning-style questions
-
-Style:
-- simple explanation first
-- then optional technical detail
-- still strictly based on context
-
----
-
-### 3. Friendly Chat Mode (IMPORTANT)
-
-If the user is casual or conversational (e.g. greetings, thanks, small talk):
-- respond naturally and briefly
-- do NOT force document context
-- do NOT be overly formal
-- keep it human and warm
-
-Examples:
-- "Happy to help!"
-- "No problem — let me know if you need anything else."
-- "Got it 👍"
-
-If the user says thanks:
-- reply briefly and kindly (1–2 lines max)
-
----
-
-## OUTPUT STYLE
-- Clear and natural
-- No repetition
-- No mention of internal system (FAISS, chunks, retrieval)
-- Balance correctness + friendliness
+Answer based only on the provided context. If the answer is not in the context,
+say so clearly rather than guessing.
 """.strip())
+
 
 def rag_node(state: OpsState) -> OpsState:
     """
@@ -118,14 +37,10 @@ def rag_node(state: OpsState) -> OpsState:
     llm       = state["llm"]
 
     if file_path:
-        # Document ingestion path — build_store and add_to_store handle
-        # embedding and persistence. Memory seeding happens in session.py
-        # after the pipeline completes so it has access to the DB session.
         state["file_path"] = ""
 
         suffix = Path(file_path).suffix.lower()
         if suffix == ".log":
-            # Log files cannot be processed in RAG mode
             state["rag_warning"] = (
                 "Log files cannot be added in RAG mode. "
                 "Open a new session to run a postmortem analysis."
@@ -135,7 +50,6 @@ def rag_node(state: OpsState) -> OpsState:
         existing = state.get("rag_store")
         if existing is None:
             from rag.ingest import build_rag_store
-            # user_id and token are passed via state for FAISS path construction
             store = build_rag_store(
                 file_path,
                 state["user_id"],
@@ -152,8 +66,21 @@ def rag_node(state: OpsState) -> OpsState:
             )
 
         state["mode"] = RAG
+
+        # Seed rag_memory with existing chat history so context isn't lost
+        # when switching from chat mode to RAG mode.
+        # Without this, asking "what was my name" in RAG mode after introducing
+        # yourself in chat mode returns nothing — the two memories are separate.
+        # Carrying over the chat summary bridges the gap naturally.
         if state.get("rag_memory") is None:
-            state["rag_memory"] = make_memory(llm)
+            rag_memory = make_memory(llm)
+            chat_memory = state.get("chat_memory")
+            if chat_memory and chat_memory.moving_summary_buffer:
+                # Carry over the compressed summary of the chat conversation.
+                # Raw messages are not copied — only the summary — so the
+                # rag_memory doesn't get bloated with unrelated chat turns.
+                rag_memory.moving_summary_buffer = chat_memory.moving_summary_buffer
+            state["rag_memory"] = rag_memory
 
         return state
 
