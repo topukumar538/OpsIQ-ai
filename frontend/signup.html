@@ -13,7 +13,6 @@
       --bg        : #0a0a0a;
       --surface   : #141414;
       --surface2  : #1e1e1e;
-      --surface3  : #252525;
       --border    : #2a2a2a;
       --border2   : #333;
       --text      : #f0f0f0;
@@ -21,107 +20,68 @@
       --faint     : #444;
       --accent    : #7c6ff7;
       --accent2   : #6358e8;
-      --accent-bg : rgba(124,111,247,0.08);
       --accent-glow: rgba(124,111,247,0.18);
       --green     : #4ade80;
       --red       : #f87171;
       --mono      : 'JetBrains Mono', monospace;
     }
 
-    html, body {
-      min-height: 100%; background: var(--bg); color: var(--text);
-      font-family: 'Inter', sans-serif;
-    }
+    html, body { min-height: 100%; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; }
 
-    .shell {
-      display: grid;
-      grid-template-columns: 1fr 420px;
-      min-height: 100vh;
-    }
+    .shell { display: grid; grid-template-columns: 1fr 420px; min-height: 100vh; }
 
-    /* ── Left panel ── */
+    /* ── Left ── */
     .left {
-      position: relative;
-      background: var(--surface);
+      position: relative; background: var(--surface);
       border-right: 1px solid var(--border);
-      display: flex; flex-direction: column;
-      justify-content: flex-end;
-      padding: 48px;
-      overflow: hidden;
+      display: flex; flex-direction: column; justify-content: flex-end;
+      padding: 48px; overflow: hidden;
     }
     .left::before {
-      content: '';
-      position: absolute; inset: 0;
-      background: repeating-linear-gradient(
-        0deg, transparent, transparent 2px,
-        rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px
-      );
+      content: ''; position: absolute; inset: 0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px);
       pointer-events: none; z-index: 1;
     }
     .left::after {
-      content: '';
-      position: absolute; top: -120px; left: -80px;
+      content: ''; position: absolute; top: -120px; left: -80px;
       width: 420px; height: 420px;
       background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
       pointer-events: none; z-index: 0;
     }
 
-    /* step tracker */
     .steps {
       position: absolute; top: 40px; left: 48px; right: 48px;
       z-index: 3; display: flex; flex-direction: column; gap: 12px;
     }
-    .step {
-      display: flex; align-items: center; gap: 10px;
-      font-family: var(--mono); font-size: 11px; color: var(--faint);
-      transition: color 0.3s;
-    }
+    .step { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 11px; color: var(--faint); transition: color 0.3s; }
     .step.active { color: var(--accent); }
     .step.done   { color: var(--green); }
     .step-num {
-      width: 20px; height: 20px; border-radius: 50%;
-      border: 1px solid currentColor;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 10px; flex-shrink: 0; transition: all 0.3s;
+      width: 20px; height: 20px; border-radius: 50%; border: 1px solid currentColor;
+      display: flex; align-items: center; justify-content: center; font-size: 10px; flex-shrink: 0; transition: all 0.3s;
     }
-    .step.done .step-num { background: var(--green); border-color: var(--green); color: #000; }
+    .step.done .step-num   { background: var(--green); border-color: var(--green); color: #000; }
     .step.active .step-num { background: var(--accent); border-color: var(--accent); color: #fff; }
 
     .left-bottom { position: relative; z-index: 3; }
-
-    .left-logo {
-      display: flex; align-items: center; gap: 12px; margin-bottom: 28px;
-    }
+    .left-logo { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
     .logo-mark {
-      width: 40px; height: 40px; border-radius: 10px;
-      background: var(--accent); display: flex; align-items: center;
-      justify-content: center; font-size: 14px; font-weight: 700; color: #fff;
+      width: 40px; height: 40px; border-radius: 10px; background: var(--accent);
+      display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: #fff;
     }
     .logo-name { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
     .logo-sub  { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.5px; margin-top: 2px; }
-
-    .left-tagline {
-      font-size: 22px; font-weight: 600; line-height: 1.45;
-      letter-spacing: -0.4px; margin-bottom: 16px;
-    }
+    .left-tagline { font-size: 22px; font-weight: 600; line-height: 1.45; letter-spacing: -0.4px; margin-bottom: 16px; }
     .left-tagline em { font-style: normal; color: var(--accent); }
-
     .perks { display: flex; flex-direction: column; gap: 8px; }
-    .perk {
-      display: flex; align-items: flex-start; gap: 9px;
-      font-size: 12px; color: var(--muted); line-height: 1.5;
-    }
+    .perk { display: flex; align-items: flex-start; gap: 9px; font-size: 12px; color: var(--muted); line-height: 1.5; }
     .perk-icon { color: var(--green); font-size: 13px; flex-shrink: 0; margin-top: 1px; }
 
-    /* ── Right panel ── */
+    /* ── Right ── */
     .right {
-      display: flex; flex-direction: column;
-      justify-content: center; align-items: center;
-      padding: 48px 40px;
-      background: var(--bg);
-      overflow-y: auto;
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      padding: 48px 40px; background: var(--bg); overflow-y: auto;
     }
-
     .form-wrap { width: 100%; max-width: 340px; }
 
     .form-head { margin-bottom: 28px; }
@@ -129,79 +89,54 @@
     .form-head p  { font-size: 13px; color: var(--muted); line-height: 1.5; }
 
     .field { margin-bottom: 14px; }
-    .field label {
-      display: block; font-size: 12px; font-weight: 500;
-      color: var(--muted); margin-bottom: 6px; letter-spacing: 0.2px;
-    }
+    .field label { display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 6px; letter-spacing: 0.2px; }
+    .field-hint  { font-size: 11px; color: var(--faint); margin-bottom: 6px; }
+
     .field input {
       width: 100%; padding: 10px 13px;
       background: var(--surface); border: 1px solid var(--border2);
-      border-radius: 9px; color: var(--text);
-      font-size: 14px; font-family: 'Inter', sans-serif;
+      border-radius: 9px; color: var(--text); font-size: 14px; font-family: 'Inter', sans-serif;
       outline: none; transition: border-color 0.15s, box-shadow 0.15s;
     }
-    .field input:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(124,111,247,0.12);
-    }
+    .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124,111,247,0.12); }
     .field input::placeholder { color: var(--faint); }
-    .field input.err   { border-color: var(--red); }
+    .field input.err   { border-color: var(--red);   box-shadow: 0 0 0 3px rgba(248,113,113,0.1); }
     .field input.valid { border-color: rgba(74,222,128,0.4); }
 
-    .field-err {
-      font-size: 11px; color: var(--red); margin-top: 5px; display: none;
-    }
+    .field-err { font-size: 12px; color: var(--red); margin-top: 6px; display: none; }
     .field-err.show { display: block; }
 
     /* password strength */
     #pw-strength { margin-top: 7px; display: none; }
     #pw-strength.show { display: block; }
-    .pw-bar {
-      height: 3px; border-radius: 2px; background: var(--border);
-      overflow: hidden; margin-bottom: 4px;
-    }
-    .pw-fill {
-      height: 100%; width: 0%; border-radius: 2px;
-      transition: width 0.3s, background 0.3s;
-    }
+    .pw-bar { height: 3px; border-radius: 2px; background: var(--border); overflow: hidden; margin-bottom: 4px; }
+    .pw-fill { height: 100%; width: 0%; border-radius: 2px; transition: width 0.3s, background 0.3s; }
     .pw-label { font-size: 10px; font-family: var(--mono); color: var(--muted); }
 
     .btn-submit {
-      width: 100%; padding: 11px;
-      background: var(--accent); border: none; border-radius: 9px;
-      color: #fff; font-size: 14px; font-weight: 600;
-      font-family: 'Inter', sans-serif; cursor: pointer;
-      transition: background 0.15s, opacity 0.15s;
-      margin-top: 8px; letter-spacing: -0.1px;
+      width: 100%; padding: 11px; background: var(--accent); border: none; border-radius: 9px;
+      color: #fff; font-size: 14px; font-weight: 600; font-family: 'Inter', sans-serif;
+      cursor: pointer; transition: background 0.15s, opacity 0.15s; margin-top: 8px; letter-spacing: -0.1px;
     }
     .btn-submit:hover:not(:disabled) { background: var(--accent2); }
     .btn-submit:disabled { opacity: 0.45; cursor: not-allowed; }
 
-    #form-error {
-      display: none; margin-bottom: 16px;
-      background: rgba(248,113,113,0.08);
-      border: 1px solid rgba(248,113,113,0.2);
-      border-radius: 8px; padding: 9px 13px;
-      font-size: 12px; color: var(--red); line-height: 1.5;
+    /* ── Banners ── */
+    .banner {
+      display: none; border-radius: 9px; padding: 11px 14px;
+      font-size: 13px; line-height: 1.55; margin-bottom: 18px;
     }
-    #form-error.show { display: block; }
-
-    #form-success {
-      display: none; margin-bottom: 16px;
-      background: rgba(74,222,128,0.06);
-      border: 1px solid rgba(74,222,128,0.18);
-      border-radius: 8px; padding: 9px 13px;
-      font-size: 12px; color: var(--green); line-height: 1.5;
-    }
-    #form-success.show { display: block; }
+    .banner.show { display: flex; align-items: flex-start; gap: 9px; }
+    .banner-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+    .banner-text { flex: 1; }
+    #form-error   { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.25); color: var(--red); }
+    #form-success { background: rgba(74,222,128,0.06);  border: 1px solid rgba(74,222,128,0.2);  color: var(--green); }
 
     .divider {
       display: flex; align-items: center; gap: 10px;
       margin: 20px 0; color: var(--faint); font-size: 11px;
     }
-    .divider::before, .divider::after {
-      content: ''; flex: 1; height: 1px; background: var(--border);
-    }
+    .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
     .link-row { text-align: center; font-size: 13px; color: var(--muted); }
     .link-row a { color: var(--accent); text-decoration: none; font-weight: 500; }
@@ -209,8 +144,7 @@
 
     .spinner {
       display: inline-block; width: 14px; height: 14px;
-      border: 2px solid rgba(255,255,255,0.3);
-      border-top-color: #fff; border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%;
       animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -228,22 +162,11 @@
 
   <!-- ── Left ── -->
   <div class="left">
-    <!-- step tracker -->
     <div class="steps" id="steps">
-      <div class="step active" id="step-1">
-        <div class="step-num">1</div>
-        <span>Create credentials</span>
-      </div>
-      <div class="step" id="step-2">
-        <div class="step-num">2</div>
-        <span>Verify your email</span>
-      </div>
-      <div class="step" id="step-3">
-        <div class="step-num">3</div>
-        <span>Start your first session</span>
-      </div>
+      <div class="step active" id="step-1"><div class="step-num">1</div><span>Create credentials</span></div>
+      <div class="step" id="step-2"><div class="step-num">2</div><span>Verify your email</span></div>
+      <div class="step" id="step-3"><div class="step-num">3</div><span>Start your first session</span></div>
     </div>
-
     <div class="left-bottom">
       <div class="left-logo">
         <div class="logo-mark">IQ</div>
@@ -252,11 +175,7 @@
           <div class="logo-sub">INTELLIGENT OPS ASSISTANT</div>
         </div>
       </div>
-      <p class="left-tagline">
-        Your ops team's<br/>
-        <em>second brain</em> — always on,<br/>
-        always in context.
-      </p>
+      <p class="left-tagline">Your ops team's<br/><em>second brain</em> — always on,<br/>always in context.</p>
       <div class="perks">
         <div class="perk"><span class="perk-icon">✓</span><span>Streaming postmortem analysis from raw logs</span></div>
         <div class="perk"><span class="perk-icon">✓</span><span>RAG over PDF, DOCX, and TXT runbooks</span></div>
@@ -275,17 +194,24 @@
         <p>Get started — it only takes a minute.</p>
       </div>
 
-      <div id="form-error"></div>
-      <div id="form-success"></div>
+      <div class="banner" id="form-error">
+        <span class="banner-icon">⚠</span>
+        <span class="banner-text" id="form-error-text"></span>
+      </div>
+      <div class="banner" id="form-success">
+        <span class="banner-icon">✓</span>
+        <span class="banner-text" id="form-success-text"></span>
+      </div>
 
       <div class="field">
-        <label for="username">Username</label>
+        <label for="username">Display name</label>
+        <div class="field-hint">This is just how you appear in the app — it doesn't need to be unique.</div>
         <input type="text" id="username" placeholder="your_handle" autocomplete="username" oninput="liveValidate('username')"/>
         <div class="field-err" id="err-username"></div>
       </div>
 
       <div class="field">
-        <label for="email">Email</label>
+        <label for="email">Email address</label>
         <input type="email" id="email" placeholder="you@company.com" autocomplete="email" oninput="liveValidate('email')"/>
         <div class="field-err" id="err-email"></div>
       </div>
@@ -310,9 +236,7 @@
 
       <div class="divider">or</div>
 
-      <div class="link-row">
-        Already have an account? <a href="/login">Sign in</a>
-      </div>
+      <div class="link-row">Already have an account? <a href="/login">Sign in</a></div>
 
     </div>
   </div>
@@ -324,7 +248,7 @@
   function setStep(n) {
     for (let i = 1; i <= 3; i++) {
       const el = document.getElementById(`step-${i}`);
-      el.classList.remove('active','done');
+      el.classList.remove('active', 'done');
       if (i < n)  el.classList.add('done');
       if (i === n) el.classList.add('active');
     }
@@ -332,24 +256,22 @@
 
   /* ── Password strength ── */
   function pwStrength(v) {
-    let score = 0;
-    if (v.length >= 8)  score++;
-    if (v.length >= 12) score++;
-    if (/[A-Z]/.test(v)) score++;
-    if (/[0-9]/.test(v)) score++;
-    if (/[^A-Za-z0-9]/.test(v)) score++;
-    return score;
+    let s = 0;
+    if (v.length >= 8)          s++;
+    if (v.length >= 12)         s++;
+    if (/[A-Z]/.test(v))        s++;
+    if (/[0-9]/.test(v))        s++;
+    if (/[^A-Za-z0-9]/.test(v)) s++;
+    return s;
   }
-
   const STRENGTH_MAP = [
-    { pct: 0,   color: 'var(--faint)',  label: '' },
-    { pct: 20,  color: 'var(--red)',    label: 'weak' },
-    { pct: 40,  color: '#fb923c',       label: 'fair' },
-    { pct: 60,  color: 'var(--amber, #fbbf24)', label: 'good' },
-    { pct: 80,  color: '#a3e635',       label: 'strong' },
-    { pct: 100, color: 'var(--green)',  label: 'very strong' },
+    { pct: 0,   color: 'var(--faint)', label: '' },
+    { pct: 20,  color: 'var(--red)',   label: 'too weak' },
+    { pct: 40,  color: '#fb923c',      label: 'fair' },
+    { pct: 60,  color: '#fbbf24',      label: 'good' },
+    { pct: 80,  color: '#a3e635',      label: 'strong' },
+    { pct: 100, color: 'var(--green)', label: 'very strong' },
   ];
-
   function onPwInput() {
     const v   = document.getElementById('password').value;
     const str = document.getElementById('pw-strength');
@@ -368,20 +290,18 @@
     const el  = document.getElementById(field);
     const err = document.getElementById(`err-${field}`);
     let msg = '';
-
     if (field === 'username') {
       const v = el.value.trim();
-      if (v && v.length < 3) msg = 'At least 3 characters.';
+      if (v && v.length < 3) msg = 'Display name must be at least 3 characters.';
     }
     if (field === 'email') {
       const v = el.value.trim();
-      if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) msg = 'Enter a valid email.';
+      if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) msg = 'Enter a valid email address.';
     }
     if (field === 'confirm') {
       const pw = document.getElementById('password').value;
       if (el.value && el.value !== pw) msg = 'Passwords do not match.';
     }
-
     if (msg) {
       err.textContent = msg; err.classList.add('show');
       el.classList.add('err'); el.classList.remove('valid');
@@ -392,14 +312,44 @@
     }
   }
 
-  /* ── Form submission ── */
+  /* ── API error parser ──────────────────────────────────────────────────────
+     FastAPI returns two error shapes:
+       - HTTPException:  { "detail": "some string" }
+       - Pydantic error: { "detail": [{ "loc": [...], "msg": "...", "type": "..." }] }
+     Without handling both, the array prints as "[object Object]".
+  ── */
+  function parseApiError(data) {
+    if (!data || !data.detail) return 'Something went wrong. Please try again.';
+    if (typeof data.detail === 'string') return data.detail;
+    if (Array.isArray(data.detail)) {
+      return data.detail
+        .map(e => {
+          const field = e.loc ? e.loc[e.loc.length - 1] : '';
+          const msg   = e.msg || 'Invalid value';
+          return field && field !== 'body' ? `${field}: ${msg}` : msg;
+        })
+        .join(' · ');
+    }
+    return 'Something went wrong. Please try again.';
+  }
+
+  /* ── Banner helpers ── */
+  function showBanner(id, msg) {
+    const banner = document.getElementById(id);
+    document.getElementById(`${id}-text`).textContent = msg;
+    banner.classList.add('show');
+  }
+  function hideBanner(id) {
+    document.getElementById(id).classList.remove('show');
+  }
+
   function clearAll() {
-    ['username','email','password','confirm'].forEach(f => {
+    ['username', 'email', 'password', 'confirm'].forEach(f => {
       document.getElementById(`err-${f}`).classList.remove('show');
-      document.getElementById(f).classList.remove('err','valid');
+      document.getElementById(f).classList.remove('err', 'valid');
     });
-    document.getElementById('form-error').classList.remove('show');
-    document.getElementById('form-success').classList.remove('show');
+    hideBanner('form-error');
+    hideBanner('form-success');
   }
 
   function showFieldErr(id, msg) {
@@ -408,45 +358,52 @@
     document.getElementById(id).classList.add('err');
   }
 
-  function showBanner(id, msg) {
-    const el = document.getElementById(id);
-    el.textContent = msg; el.classList.add('show');
-  }
-
   function setLoading(on) {
     const btn = document.getElementById('btn-signup');
     btn.disabled = on;
     btn.innerHTML = on ? '<span class="spinner"></span>Creating account…' : 'Create account';
   }
 
+  /* ── Signup ── */
   async function doSignup() {
     clearAll();
     const username = document.getElementById('username').value.trim();
     const email    = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
     const confirm  = document.getElementById('confirm').value;
-    let ok = true;
+    let valid = true;
 
-    if (!username)         { showFieldErr('username', 'Username is required.');      ok = false; }
-    else if (username.length < 3) { showFieldErr('username', 'At least 3 characters.'); ok = false; }
-
-    if (!email)            { showFieldErr('email',    'Email is required.');         ok = false; }
-    if (!password)         { showFieldErr('password', 'Password is required.');      ok = false; }
-    else if (password.length < 8) { showFieldErr('password', 'Minimum 8 characters.'); ok = false; }
-    if (!confirm)          { showFieldErr('confirm',  'Please confirm your password.'); ok = false; }
-    else if (confirm !== password) { showFieldErr('confirm', 'Passwords do not match.'); ok = false; }
-
-    if (!ok) return;
+    if (!username) {
+      showFieldErr('username', 'Display name is required.'); valid = false;
+    } else if (username.length < 3) {
+      showFieldErr('username', 'Display name must be at least 3 characters.'); valid = false;
+    }
+    if (!email) {
+      showFieldErr('email', 'Email address is required.'); valid = false;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showFieldErr('email', 'Enter a valid email address.'); valid = false;
+    }
+    if (!password) {
+      showFieldErr('password', 'Password is required.'); valid = false;
+    } else if (password.length < 8) {
+      showFieldErr('password', 'Password must be at least 8 characters.'); valid = false;
+    }
+    if (!confirm) {
+      showFieldErr('confirm', 'Please confirm your password.'); valid = false;
+    } else if (confirm !== password) {
+      showFieldErr('confirm', 'Passwords do not match.'); valid = false;
+    }
+    if (!valid) return;
 
     setLoading(true);
     setStep(2);
 
     try {
       const res  = await fetch('/auth/signup', {
-        method      : 'POST',
-        headers     : { 'Content-Type': 'application/json' },
-        credentials : 'include',
-        body        : JSON.stringify({ username, email, password }),
+        method     : 'POST',
+        headers    : { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body       : JSON.stringify({ username, email, password }),
       });
       const data = await res.json();
 
@@ -456,15 +413,18 @@
         setTimeout(() => window.location.href = '/app', 1100);
       } else {
         setStep(1);
-        const detail = data.detail || 'Signup failed. Please try again.';
-        showBanner('form-error', detail);
-        // Highlight relevant field
-        if (detail.toLowerCase().includes('email'))    showFieldErr('email',    detail);
-        if (detail.toLowerCase().includes('username')) showFieldErr('username', detail);
+        const msg = parseApiError(data);
+        showBanner('form-error', msg);
+
+        // Highlight the specific field the error refers to
+        const lower = msg.toLowerCase();
+        if (lower.includes('email'))    showFieldErr('email',    msg);
+        if (lower.includes('username') || lower.includes('display name')) showFieldErr('username', msg);
+        if (lower.includes('password')) showFieldErr('password', msg);
       }
     } catch {
       setStep(1);
-      showBanner('form-error', 'Network error. Is the server running?');
+      showBanner('form-error', 'Cannot reach the server. Check your connection and try again.');
     } finally {
       setLoading(false);
     }

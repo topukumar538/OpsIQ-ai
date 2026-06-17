@@ -4,6 +4,7 @@ FAISS retrieval helpers — shared across RAG and postmortem nodes.
 
 The embeddings model is lazily loaded on first call so a failed model
 download doesn't crash the entire app at import time (fixes issue #17).
+
 """
 import logging
 from functools import lru_cache

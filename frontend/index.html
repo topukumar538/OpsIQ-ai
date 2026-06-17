@@ -35,18 +35,15 @@
     display: flex; flex-direction: column;
     height: 100vh;
   }
-
   #sidebar-header {
     padding: 16px 14px 12px;
     border-bottom: 1px solid var(--border);
   }
-
   #sidebar-header h1 {
     font-size: 16px; font-weight: 700;
     color: var(--accent); letter-spacing: -0.3px;
     margin-bottom: 10px;
   }
-
   #new-session-btn {
     width: 100%;
     background: var(--accent-dim);
@@ -79,10 +76,7 @@
     position: relative;
   }
   .session-item:hover { background: var(--surface); }
-  .session-item.active {
-    background: var(--surface);
-    border-color: var(--border);
-  }
+  .session-item.active { background: var(--surface); border-color: var(--border); }
 
   .session-icon { font-size: 14px; flex-shrink: 0; }
   .session-info { flex: 1; min-width: 0; }
@@ -91,10 +85,7 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     color: var(--text);
   }
-  .session-meta {
-    font-size: 11px; color: var(--muted);
-    margin-top: 1px;
-  }
+  .session-meta { font-size: 11px; color: var(--muted); margin-top: 1px; }
 
   .session-delete {
     opacity: 0;
@@ -130,10 +121,7 @@
   #user-email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* ── Main area ───────────────────────────────────────────────────────── */
-  #main {
-    flex: 1; display: flex; flex-direction: column;
-    height: 100vh; overflow: hidden;
-  }
+  #main { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 
   /* ── Topbar ──────────────────────────────────────────────────────────── */
   #topbar {
@@ -152,9 +140,9 @@
     font-size: 11px; font-weight: 600; padding: 3px 10px;
     border-radius: 20px; text-transform: uppercase; letter-spacing: 0.05em;
   }
-  .mode-chat      { background: #1a2f1a; color: #4ade80; }
-  .mode-rag       { background: #1a2040; color: #60a5fa; }
-  .mode-postmortem{ background: #2d1a1a; color: #f87171; }
+  .mode-chat       { background: #1a2f1a; color: #4ade80; }
+  .mode-rag        { background: #1a2040; color: #60a5fa; }
+  .mode-postmortem { background: #2d1a1a; color: #f87171; }
 
   #upload-btn {
     background: var(--surface); border: 1px solid var(--border);
@@ -175,18 +163,15 @@
   #chat-area::-webkit-scrollbar { width: 4px; }
   #chat-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
-  .message {
-    max-width: 760px; margin: 0 auto 16px;
-    padding: 0 20px;
-  }
+  .message { max-width: 760px; margin: 0 auto 16px; padding: 0 20px; }
   .message-inner {
     padding: 12px 16px;
     border-radius: var(--radius);
     font-size: 14px; line-height: 1.7;
     white-space: pre-wrap;
   }
-  .user .message-inner   { background: var(--user-msg); color: var(--text); }
-  .ai   .message-inner   { background: var(--ai-msg);   color: var(--text); border: 1px solid var(--border); }
+  .user .message-inner { background: var(--user-msg); color: var(--text); }
+  .ai   .message-inner { background: var(--ai-msg);   color: var(--text); border: 1px solid var(--border); }
 
   .message-role {
     font-size: 11px; font-weight: 600; text-transform: uppercase;
@@ -197,8 +182,7 @@
   #empty-state {
     display: flex; flex-direction: column;
     align-items: center; justify-content: center;
-    height: 100%; color: var(--muted); text-align: center;
-    padding: 40px;
+    height: 100%; color: var(--muted); text-align: center; padding: 40px;
   }
   #empty-state h2 { font-size: 20px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
   #empty-state p  { font-size: 14px; line-height: 1.7; max-width: 360px; }
@@ -213,10 +197,7 @@
     flex-shrink: 0;
   }
   #report-panel.visible { display: block; }
-  #report-panel pre {
-    font-family: var(--mono); font-size: 12px;
-    color: var(--text); white-space: pre-wrap;
-  }
+  #report-panel pre { font-family: var(--mono); font-size: 12px; color: var(--text); white-space: pre-wrap; }
   #report-header {
     display: flex; align-items: center; justify-content: space-between;
     margin-bottom: 8px;
@@ -276,8 +257,7 @@
 
   /* ── No session overlay ──────────────────────────────────────────────── */
   #no-session {
-    display: none;
-    flex: 1; flex-direction: column;
+    display: none; flex: 1; flex-direction: column;
     align-items: center; justify-content: center;
     color: var(--muted); text-align: center; padding: 40px;
   }
@@ -315,25 +295,21 @@
 <!-- ── Main ───────────────────────────────────────────────────────────────── -->
 <div id="main">
 
-  <!-- Topbar -->
   <div id="topbar">
     <span id="session-title" style="color:var(--muted)">Select or create a session</span>
     <span id="mode-badge" class="mode-chat" style="display:none">Chat</span>
     <button id="upload-btn" onclick="document.getElementById('file-input').click()" style="display:none">
       📎 Upload file
     </button>
-    <input id="file-input" type="file"
-      onchange="handleFileUpload(this)"/>
+    <input id="file-input" type="file" onchange="handleFileUpload(this)"/>
   </div>
 
-  <!-- No session selected state -->
   <div id="no-session" class="visible">
     <h2>Welcome to OpsIQ</h2>
     <p>Create a new session to start chatting, upload documents for RAG analysis, or run a postmortem on a log file.</p>
     <button onclick="newSession()">＋ Start new session</button>
   </div>
 
-  <!-- Chat content (hidden until session selected) -->
   <div id="chat-content" style="display:none; flex:1; flex-direction:column; overflow:hidden;">
     <div id="chat-area">
       <div id="empty-state">
@@ -366,10 +342,12 @@
 
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
-let activeToken   = null;   // current session token
-let isStreaming   = false;
-let reportText    = "";
-let allSessions   = [];     // cached from /sessions
+let activeToken        = null;
+let isStreaming        = false;
+let reportText         = "";
+let allSessions        = [];
+let acceptedExtensions = new Set([".pdf", ".docx", ".doc", ".txt", ".log"]);
+let maxUploadSizeMB    = 50;
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.addEventListener("DOMContentLoaded", async () => {
@@ -383,8 +361,9 @@ async function loadAcceptedExtensions() {
     const res  = await fetch("/upload/extensions");
     const data = await res.json();
     document.getElementById("file-input").setAttribute("accept", data.accept);
+    acceptedExtensions = new Set(data.extensions);
+    if (data.max_size_mb) maxUploadSizeMB = data.max_size_mb;
   } catch {
-    // fallback — hardcoded only as a safety net if the endpoint fails
     document.getElementById("file-input").setAttribute("accept", ".pdf,.docx,.doc,.txt,.log");
   }
 }
@@ -448,8 +427,7 @@ async function switchSession(token) {
 
   document.getElementById("no-session").classList.remove("visible");
   document.getElementById("chat-content").style.display = "flex";
-  document.getElementById("chat-area").innerHTML =
-    '<div id="empty-state"><h2>Loading session...</h2></div>';
+  document.getElementById("chat-area").innerHTML = '<div id="empty-state"><h2>Loading session...</h2></div>';
   document.getElementById("report-panel").classList.remove("visible");
   document.getElementById("progress-bar").classList.remove("visible");
 
@@ -461,10 +439,9 @@ async function switchSession(token) {
 
   const s = allSessions.find(s => s.token === token);
   document.getElementById("session-title").textContent = s ? s.name : "Session";
-  document.getElementById("upload-btn").style.display = "flex";
+  document.getElementById("upload-btn").style.display  = "flex";
   document.getElementById("mode-badge").style.display  = "inline-block";
 
-  // Restore conversation history and postmortem report
   document.getElementById("chat-area").innerHTML = "";
   try {
     const memRes  = await fetch("/session/memory", { headers, credentials: "include" });
@@ -540,10 +517,10 @@ async function sendMessage() {
 
   try {
     const res = await fetch("/chat", {
-      method : "POST",
-      headers: sessionHeader(),
+      method     : "POST",
+      headers    : sessionHeader(),
       credentials: "include",
-      body   : JSON.stringify({ message: msg }),
+      body       : JSON.stringify({ message: msg }),
     });
     const reader = res.body.getReader();
     const dec    = new TextDecoder();
@@ -570,58 +547,22 @@ async function sendMessage() {
   isStreaming = false;
   document.getElementById("send-btn").disabled = false;
 
-  // Refresh session name in sidebar (may have auto-updated)
   await loadSessions();
   renderSessions();
 }
 
 // ── Upload ────────────────────────────────────────────────────────────────────
-let acceptedExtensions = new Set([".pdf", ".docx", ".doc", ".txt", ".log"]); // fallback default
-let maxUploadSizeMB    = 50;  // fallback default — overwritten by /upload/extensions
-
-async function loadAcceptedExtensions() {
-  try {
-    const res  = await fetch("/upload/extensions");
-    const data = await res.json();
-    document.getElementById("file-input").setAttribute("accept", data.accept);
-    acceptedExtensions = new Set(data.extensions);
-    if (data.max_size_mb) maxUploadSizeMB = data.max_size_mb;
-  } catch {
-    document.getElementById("file-input").setAttribute("accept", ".pdf,.docx,.doc,.txt,.log");
-  }
-}
-
 function validateFile(file) {
-  /**
-   * Client-side validation — runs before anything is sent to the server.
-   * Returns {ok: true} or {ok: false, message: "..."}
-   *
-   * Two checks:
-   *   1. Extension — must be in the set fetched from /upload/extensions
-   *   2. Size      — must be under maxUploadSizeMB
-   *
-   * Why both: extension gives instant "wrong file type" feedback.
-   * Size gives instant "too big" feedback instead of a 60s upload timeout.
-   * Server still enforces both independently — client checks are UX only.
-   */
-  const ext     = "." + file.name.split(".").pop().toLowerCase();
-  const sizeMB  = file.size / (1024 * 1024);
+  const ext    = "." + file.name.split(".").pop().toLowerCase();
+  const sizeMB = file.size / (1024 * 1024);
 
   if (!acceptedExtensions.has(ext)) {
     const supported = [...acceptedExtensions].join(", ");
-    return {
-      ok     : false,
-      message: `Unsupported file type "${ext}". Supported: ${supported}`,
-    };
+    return { ok: false, message: `Unsupported file type "${ext}". Supported: ${supported}` };
   }
-
   if (sizeMB > maxUploadSizeMB) {
-    return {
-      ok     : false,
-      message: `File too large (${sizeMB.toFixed(1)}MB). Maximum is ${maxUploadSizeMB}MB.`,
-    };
+    return { ok: false, message: `File too large (${sizeMB.toFixed(1)}MB). Maximum is ${maxUploadSizeMB}MB.` };
   }
-
   return { ok: true };
 }
 
@@ -630,7 +571,6 @@ async function handleFileUpload(input) {
   const file = input.files[0];
   input.value = "";
 
-  // Validate before touching the network
   const validation = validateFile(file);
   if (!validation.ok) {
     appendMessage("ai", `⚠️ ${validation.message}`);
@@ -648,14 +588,13 @@ async function handleFileUpload(input) {
 
   try {
     const res = await fetch("/upload", {
-      method : "POST",
-      headers: { "x-session-token": activeToken },
+      method     : "POST",
+      headers    : { "x-session-token": activeToken },
       credentials: "include",
-      body   : formData,
+      body       : formData,
     });
 
     if (isLog) {
-      // SSE stream for postmortem
       const reader = res.body.getReader();
       const dec    = new TextDecoder();
       let   buf    = "";
@@ -679,6 +618,11 @@ async function handleFileUpload(input) {
               reportText = evt.text;
               document.getElementById("report-content").textContent = reportText;
               document.getElementById("report-panel").classList.add("visible");
+            } else if (evt.event === "error") {
+              // Pipeline failed — clear spinner and show error as a chat message
+              // so the user sees what went wrong instead of a frozen progress bar.
+              document.getElementById("progress-bar").classList.remove("visible");
+              appendMessage("ai", `⚠️ ${evt.text}`);
             }
           } catch {}
         }
@@ -695,9 +639,8 @@ async function handleFileUpload(input) {
       }
     }
 
-    // Refresh mode badge + session list
-    const modeRes = await fetch("/session/mode", {
-      headers: { "x-session-token": activeToken },
+    const modeRes  = await fetch("/session/mode", {
+      headers    : { "x-session-token": activeToken },
       credentials: "include",
     });
     const modeData = await modeRes.json();
@@ -751,15 +694,19 @@ function copyReport() {
 
 function timeAgo(iso) {
   const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
-  if (diff < 60)   return "just now";
-  if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
-  if (diff < 86400)return `${Math.floor(diff/3600)}h ago`;
-  return `${Math.floor(diff/86400)}d ago`;
+  if (diff < 60)    return "just now";
+  if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
 }
 
 function escHtml(str) {
-  return str.replace(/&/g,"&amp;").replace(/</g,"&lt;")
-            .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");   // fix: single quote was missing before
 }
 </script>
 </body>

@@ -34,35 +34,30 @@ from config import SESSION_TTL_SECONDS, SESSION_CLEANUP_INTERVAL_SECONDS
 logger = logging.getLogger(__name__)
 
 # In-memory cache: token → session dict
-# Keys: graph, state, llm, lock, last_accessed, db_id, user_id, token
 _sessions: dict[str, dict[str, Any]] = {}
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 def _make_in_memory_session(
-    db_id    : int,
-    user_id  : int,
-    token    : str,
-    chat_llm ,
-    rag_llm  ,
-    pm_llm   ,
-    state    : dict,
+    db_id  : int,
+    user_id: int,
+    token  : str,
+    chat_llm,
+    rag_llm,
+    pm_llm,
+    state  : dict,
 ) -> dict[str, Any]:
     return {
-        "db_id":         db_id,
-        "user_id":       user_id,
-        "token":         token,
-        "graph":         build_graph(),
-        "state":         state,
-        # Three separate LLM instances at different temperatures.
-        # chat_llm=0.7 for natural conversation.
-        # rag_llm=0.3 for accurate document Q&A.
-        # pm_llm=0.1 for reproducible postmortem analysis.
-        "chat_llm":      chat_llm,
-        "rag_llm":       rag_llm,
-        "pm_llm":        pm_llm,
-        "lock":          asyncio.Lock(),
+        "db_id"        : db_id,
+        "user_id"      : user_id,
+        "token"        : token,
+        "graph"        : build_graph(),
+        "state"        : state,
+        "chat_llm"     : chat_llm,
+        "rag_llm"      : rag_llm,
+        "pm_llm"       : pm_llm,
+        "lock"         : asyncio.Lock(),
         "last_accessed": time.time(),
     }
 
@@ -89,8 +84,13 @@ async def _load_from_db(token: str, user_id: int) -> Optional[dict[str, Any]]:
         state    = make_initial_state(chat_llm)
 
         # Restore mode + lock state from DB
-        state["mode"]      = row.mode
-        state["is_locked"] = row.is_locked
+        state["mode"]       = row.mode
+        state["is_locked"]  = row.is_locked
+
+        # Restore postmortem report — persisted so it survives server restarts.
+        # Without this, the report panel goes blank after Railway redeploys
+        # even though the session mode and FAISS store restore correctly.
+        state["report_str"] = row.report_str or ""
 
         # Restore FAISS stores from disk
         rag_store = load_store(user_id, token, "rag")
@@ -100,9 +100,7 @@ async def _load_from_db(token: str, user_id: int) -> Optional[dict[str, Any]]:
         if pm_store:
             state["pm_store"]  = pm_store
 
-        # Restore LangChain memory — full summary + last 20 raw messages.
-        # Memory objects seeded with the correct LLM for their mode so that
-        # summarisation at the token limit uses the right temperature too.
+        # Restore LangChain memory
         memories = await restore_memory_from_db(db, row.id, chat_llm, rag_llm, pm_llm)
         state["chat_memory"] = memories["chat_memory"]
         state["rag_memory"]  = memories["rag_memory"]
@@ -143,24 +141,20 @@ async def create_session(user_id: int, db: AsyncSession) -> dict[str, Any]:
 
 
 async def get_session(
-    token   : str,
-    user_id : int,
+    token  : str,
+    user_id: int,
 ) -> Optional[dict[str, Any]]:
     """
     Get a session by token, verifying it belongs to user_id.
 
     Check order:
-        1. In-memory cache (fast path — most requests go here)
+        1. In-memory cache (fast path)
         2. DB + disk restore (after TTL eviction or server restart)
         3. Return None if not found or wrong user
-
-    Ownership is always verified — even cache hits check user_id so a
-    token that somehow leaks to another user is rejected.
     """
     session = _sessions.get(token)
 
     if session:
-        # Verify ownership even on cache hit
         if session["user_id"] != user_id:
             logger.warning(
                 "Session ownership mismatch: token=%s claimed by user=%d owned by user=%d",
@@ -170,7 +164,6 @@ async def get_session(
         session["last_accessed"] = time.time()
         return session
 
-    # Not in cache — try DB restore
     return await _load_from_db(token, user_id)
 
 
@@ -179,7 +172,6 @@ async def delete_session(token: str, user_id: int, db: AsyncSession) -> bool:
     Delete a session from memory, Postgres, and FAISS disk.
     Returns False if session not found or doesn't belong to user_id.
     """
-    # Verify ownership before deleting
     result = await db.execute(
         select(SessionModel).where(
             SessionModel.token   == token,
@@ -201,10 +193,7 @@ async def delete_session(token: str, user_id: int, db: AsyncSession) -> bool:
 
 
 async def list_sessions(user_id: int, db: AsyncSession) -> list[dict]:
-    """
-    Return all sessions for a user, newest first.
-    Used to populate the sidebar.
-    """
+    """Return all sessions for a user, newest first."""
     result = await db.execute(
         select(SessionModel)
         .where(SessionModel.user_id == user_id)
@@ -213,11 +202,11 @@ async def list_sessions(user_id: int, db: AsyncSession) -> list[dict]:
     rows = result.scalars().all()
     return [
         {
-            "token":            row.token,
-            "name":             row.name,
-            "mode":             row.mode,
-            "is_locked":        row.is_locked,
-            "created_at":       row.created_at.isoformat(),
+            "token"           : row.token,
+            "name"            : row.name,
+            "mode"            : row.mode,
+            "is_locked"       : row.is_locked,
+            "created_at"      : row.created_at.isoformat(),
             "last_accessed_at": row.last_accessed_at.isoformat(),
         }
         for row in rows
@@ -227,7 +216,6 @@ async def list_sessions(user_id: int, db: AsyncSession) -> list[dict]:
 async def update_session_name(
     token: str, user_id: int, name: str, db: AsyncSession
 ) -> None:
-    """Auto-update session name from first message or filename."""
     await db.execute(
         update(SessionModel)
         .where(SessionModel.token == token, SessionModel.user_id == user_id)
@@ -240,7 +228,6 @@ async def update_session_mode(
     token: str, user_id: int, mode: str, db: AsyncSession,
     is_locked: bool = False,
 ) -> None:
-    """Sync mode and lock state back to DB after graph runs."""
     await db.execute(
         update(SessionModel)
         .where(SessionModel.token == token, SessionModel.user_id == user_id)
@@ -252,12 +239,34 @@ async def update_session_mode(
 async def update_session_faiss_path(
     token: str, user_id: int, path: str, db: AsyncSession
 ) -> None:
-    """Record where the FAISS store lives after first upload."""
-    from config import FAISS_STORE_DIR
     await db.execute(
         update(SessionModel)
         .where(SessionModel.token == token, SessionModel.user_id == user_id)
         .values(faiss_store_path=path)
+    )
+    await db.commit()
+
+
+async def save_report_to_db(
+    token  : str,
+    user_id: int,
+    report : str,
+    db     : AsyncSession,
+) -> None:
+    """
+    Persist the postmortem report string to the sessions table.
+
+    Why this exists:
+        report_str lives in session["state"] in memory but was never written
+        to the DB. After a server restart (Railway deploy, crash, idle shutdown),
+        the session restores from DB — mode, is_locked, and FAISS all come back
+        correctly, but report_str was empty string, leaving the report panel blank.
+        Now it's saved here right after the postmortem pipeline completes.
+    """
+    await db.execute(
+        update(SessionModel)
+        .where(SessionModel.token == token, SessionModel.user_id == user_id)
+        .values(report_str=report)
     )
     await db.commit()
 
@@ -284,6 +293,10 @@ def run_graph(token: str, user_id: int, user_input: str = "", file_path: str = "
     if not session or session["user_id"] != user_id:
         raise ValueError(f"Session {token} not in cache — call get_session first")
 
+    # Touch last_accessed so the cleanup task doesn't evict a session
+    # mid-run during a long postmortem pipeline.
+    session["last_accessed"] = time.time()
+
     state = session["state"]
     state["user_input"]    = user_input
     state["file_path"]     = file_path
@@ -301,10 +314,7 @@ async def run_graph_async(
     user_input: str = "",
     file_path : str = "",
 ) -> dict:
-    """
-    Async wrapper — moves blocking LangGraph pipeline off the event loop
-    onto a ThreadPoolExecutor worker so other requests aren't frozen.
-    """
+    """Async wrapper — moves blocking LangGraph pipeline off the event loop."""
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         None, run_graph, token, user_id, user_input, file_path,
@@ -314,15 +324,13 @@ async def run_graph_async(
 # ── TTL cleanup ───────────────────────────────────────────────────────────────
 
 def cleanup_expired_sessions() -> int:
-    """
-    Evict idle sessions from the in-memory cache only.
-    DB rows and FAISS disk stores are intentionally kept so users can
-    reconnect after idle periods and get their context back.
-    Only DELETE /session removes from DB + disk.
-    """
     now     = time.time()
     cutoff  = now - SESSION_TTL_SECONDS
-    expired = [t for t, s in _sessions.items() if s["last_accessed"] < cutoff]
+    expired = [
+        t for t, s in _sessions.items()
+        if s["last_accessed"] < cutoff
+        and not s["lock"].locked()    # never evict a session mid-run
+    ]
     for token in expired:
         _sessions.pop(token, None)
     return len(expired)

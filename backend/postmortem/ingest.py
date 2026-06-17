@@ -30,15 +30,28 @@ def chunk_by_lines(text: str) -> list[Document]:
 
 
 def extract_errors(text: str) -> dict:
+    """
+    Count error occurrences per named error type.
+
+    Bug fixed: the original code had nested loops — outer over lines, inner
+    over ERROR_PATTERNS. A line containing both "ERROR" and "EXCEPTION"
+    (e.g. "ERROR Exception in thread main") was counted twice, once for each
+    matching pattern, inflating the totals in the report.
+
+    Fix: break after the first matching pattern per line so each line is
+    counted exactly once regardless of how many patterns it matches.
+    """
     error_counts = {}
     for line in text.splitlines():
+        line_upper = line.upper()
         for pattern in ERROR_PATTERNS:
-            if pattern in line.upper():
+            if pattern in line_upper:
                 match = re.search(
                     r"([A-Za-z]+(?:Error|Exception|Failure|Failed|Critical|Fatal))", line,
                 )
                 name = match.group(1) if match else pattern
                 error_counts[name] = error_counts.get(name, 0) + 1
+                break   # ← stop after first matching pattern per line
     return error_counts
 
 

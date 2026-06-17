@@ -27,7 +27,12 @@ def make_token(user_id: int) -> str:
 def verify_token(token: str) -> Optional[int]:
     """Return user_id if the token is valid and unexpired, else None."""
     try:
-        uid_str, ts_str, sig = token.split(".")
+        # split(".", 2) caps at exactly 3 parts.
+        # Without the 2, a token with extra dots (tampered cookie, encoding
+        # issue, future format change) returns more than 3 elements and the
+        # unpacking raises ValueError — silently caught as unauthenticated.
+        # The 2 makes the parser robust regardless of what's in the sig.
+        uid_str, ts_str, sig = token.split(".", 2)
         user_id = int(uid_str)
         ts      = int(ts_str)
     except (ValueError, AttributeError):
@@ -40,4 +45,3 @@ def verify_token(token: str) -> Optional[int]:
         return None
 
     return user_id
-

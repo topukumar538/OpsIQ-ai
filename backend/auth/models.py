@@ -1,3 +1,4 @@
+# Location: backend/auth/models.py
 import uuid
 from datetime import datetime
 
@@ -6,8 +7,6 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from config import DATABASE_URL, DB_SCHEMA
 
-# Postgres 15+ blocks CREATE on schema public for non-superusers.
-# Use a dedicated app schema when connecting to PostgreSQL.
 _table_schema = DB_SCHEMA if DATABASE_URL.startswith("postgresql") else None
 metadata = MetaData(schema=_table_schema)
 
@@ -23,14 +22,14 @@ def _new_token() -> str:
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
+    id           : Mapped[int]      = mapped_column(primary_key=True, autoincrement=True)
+    # username is NOT unique — multiple accounts can share a display name.
+    # email is the unique identifier used for login.
+    username     : Mapped[str]      = mapped_column(String(64), nullable=False, index=True)
+    email        : Mapped[str]      = mapped_column(String(255), unique=True, nullable=False, index=True)
+    password_hash: Mapped[str]      = mapped_column(String(255), nullable=False)
+    created_at   : Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
     )
 
     def __repr__(self) -> str:
@@ -40,58 +39,48 @@ class User(Base):
 class Session(Base):
     __tablename__ = "sessions"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    token: Mapped[str] = mapped_column(
-        String(64), unique=True, nullable=False, index=True, default=_new_token,
-    )
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(100), nullable=False, default="New session")
-    mode: Mapped[str] = mapped_column(String(20), nullable=False, default="chat")
-    is_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    id              : Mapped[int]        = mapped_column(primary_key=True, autoincrement=True)
+    token           : Mapped[str]        = mapped_column(String(64), unique=True, nullable=False, index=True, default=_new_token)
+    user_id         : Mapped[int]        = mapped_column(ForeignKey(User.id), nullable=False, index=True)
+    name            : Mapped[str]        = mapped_column(String(100), nullable=False, default="New session")
+    mode            : Mapped[str]        = mapped_column(String(20), nullable=False, default="chat")
+    is_locked       : Mapped[bool]       = mapped_column(Boolean, nullable=False, default=False)
     faiss_store_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False,
-    )
-    last_accessed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False,
-    )
+    # Persisted so the postmortem report survives server restarts.
+    # Without this, the report panel goes blank after Railway redeploys
+    # even though the session, FAISS store, and mode all restore correctly.
+    report_str      : Mapped[str]        = mapped_column(Text, nullable=False, default="")
+    created_at      : Mapped[datetime]   = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_accessed_at: Mapped[datetime]   = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class SessionFile(Base):
     __tablename__ = "session_files"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id"), nullable=False, index=True)
-    filename: Mapped[str] = mapped_column(String(255), nullable=False)
-    file_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False,
-    )
+    id        : Mapped[int]      = mapped_column(primary_key=True, autoincrement=True)
+    session_id: Mapped[int]      = mapped_column(ForeignKey(Session.id), nullable=False, index=True)
+    filename  : Mapped[str]      = mapped_column(String(255), nullable=False)
+    file_hash : Mapped[str]      = mapped_column(String(64), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class SessionMemory(Base):
     __tablename__ = "session_memory"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    session_id: Mapped[int] = mapped_column(
-        ForeignKey("sessions.id"), unique=True, nullable=False, index=True,
-    )
-    chat_summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    rag_summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    pm_summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False,
-    )
+    id           : Mapped[int]      = mapped_column(primary_key=True, autoincrement=True)
+    session_id   : Mapped[int]      = mapped_column(ForeignKey(Session.id), unique=True, nullable=False, index=True)
+    chat_summary : Mapped[str]      = mapped_column(Text, nullable=False, default="")
+    rag_summary  : Mapped[str]      = mapped_column(Text, nullable=False, default="")
+    pm_summary   : Mapped[str]      = mapped_column(Text, nullable=False, default="")
+    updated_at   : Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
 class SessionMessage(Base):
     __tablename__ = "session_messages"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id"), nullable=False, index=True)
-    role: Mapped[str] = mapped_column(String(10), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
-    mode: Mapped[str] = mapped_column(String(20), nullable=False, default="chat")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False,
-    )
+    id        : Mapped[int]      = mapped_column(primary_key=True, autoincrement=True)
+    session_id: Mapped[int]      = mapped_column(ForeignKey(Session.id), nullable=False, index=True)
+    role      : Mapped[str]      = mapped_column(String(10), nullable=False)
+    content   : Mapped[str]      = mapped_column(Text, nullable=False)
+    mode      : Mapped[str]      = mapped_column(String(20), nullable=False, default="chat")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

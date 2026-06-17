@@ -13,14 +13,15 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 from fastapi import FastAPI, UploadFile, File, Header, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
+
 
 from auth.database import init_db, get_db
 from auth.dependencies import get_current_user
 from auth.models import User, SessionFile
 from auth.router import router as auth_router
-from config import FAISS_STORE_DIR, RAG_TOP_K, PM_TOP_K
+from config import FAISS_STORE_DIR, RAG_TOP_K, PM_TOP_K, ALLOWED_ORIGINS
 from core.memory import save_message_to_db, save_memory_to_db, make_memory
 from graph.state import POSTMORTEM, RAG
 from rag.ingest import hash_file, is_duplicate, record_file, build_rag_store, add_to_store
@@ -32,6 +33,7 @@ from session import (
     get_session,
     list_sessions,
     run_graph_async,
+    save_report_to_db,
     start_cleanup_task,
     touch_session,
     update_session_faiss_path,
@@ -43,6 +45,13 @@ logger = logging.getLogger(__name__)
 
 _BACKEND_DIR = Path(__file__).resolve().parent
 _FRONTEND_DIR = _BACKEND_DIR.parent / "frontend"
+
+
+
+# With imports
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from auth.router import limiter
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
@@ -63,9 +72,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="OpsIQ", lifespan=lifespan)
 
+# Right after app = FastAPI(...)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler) # type: ignore
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,   # ← was ["*"]
     allow_methods=["*"],
     allow_headers=["*"],
     allow_credentials=True,
@@ -186,10 +199,8 @@ async def get_memory(session: dict = Depends(get_active_session)):
 
 
 # ── Chat ──────────────────────────────────────────────────────────────────────
-
 class ChatRequest(BaseModel):
-    message: str
-
+    message: str = Field(min_length=1, max_length=32_000)
 
 @app.post("/chat")
 async def chat(
@@ -336,55 +347,76 @@ async def upload(
 
     # ── Log file → postmortem pipeline ───────────────────────────────────────
     if kind == "log_file":
-        async def _run():
-            yield f"data: {json.dumps({'event':'progress','text':f'Processing {fname}...'})}\n\n"
+        # This is the fixed _run() generator only.
+        # Replace the existing _run() inside the upload() route in main.py.
+        # Everything outside _run() stays the same.
+
+        async def _run() -> AsyncGenerator[str, None]:
             try:
-                async with session["lock"]:
-                    result = await run_graph_async(token, uid, file_path=str(tmp_path))
+                yield f"data: {json.dumps({'event': 'progress', 'text': f'Processing {fname}...'})}\n\n"
+
+                try:
+                    async with session["lock"]:
+                        result = await run_graph_async(token, uid, file_path=str(tmp_path))
+                finally:
+                    # Always clean up the temp file whether the pipeline
+                    # succeeded or failed — never leave files in /tmp.
+                    tmp_path.unlink(missing_ok=True)
+
+                # Pipeline succeeded — persist everything to DB
+                await update_session_mode(token, uid, POSTMORTEM, db, is_locked=True)
+                await update_session_faiss_path(
+                    token, uid,
+                    str(Path(FAISS_STORE_DIR) / str(uid) / token / "pm"),
+                    db,
+                )
+                await update_session_name(token, uid, f"PM: {fname}", db)
+                await record_file(db, db_id, fname, file_hash)
+                await save_report_to_db(token, uid, result.get("report_str", ""), db)
+                await save_memory_to_db(
+                    db, db_id,
+                    session["state"].get("chat_memory"),
+                    session["state"].get("rag_memory"),
+                    session["state"].get("pm_memory"),
+                )
+
+                yield f"data: {json.dumps({'event': 'report', 'text': result.get('report_str', '')})}\n\n"
+
+            except Exception as e:
+                # Pipeline failed — tell the frontend clearly so the progress
+                # bar clears and the user sees an actionable error message
+                # instead of a spinner that hangs forever.
+                logger.exception("Postmortem pipeline failed for file=%s token=%s", fname, token)
+                yield f"data: {json.dumps({'event': 'error', 'text': f'Processing failed: {str(e)}'})}\n\n"
+
             finally:
-                tmp_path.unlink(missing_ok=True)
-
-            # Sync mode + lock back to DB
-            await update_session_mode(token, uid, POSTMORTEM, db, is_locked=True)
-            await update_session_faiss_path(
-                token, uid,
-                str(Path(FAISS_STORE_DIR) / str(uid) / token / "pm"),
-                db,
-            )
-            # Auto-name from log filename
-            await update_session_name(token, uid, f"PM: {fname}", db)
-            await record_file(db, db_id, fname, file_hash)
-
-            await save_memory_to_db(
-                db, db_id,
-                session["state"].get("chat_memory"),
-                session["state"].get("rag_memory"),
-                session["state"].get("pm_memory"),
-            )
-
-            yield f"data: {json.dumps({'event':'report','text':result.get('report_str','')})}\n\n"
-            yield "data: [DONE]\n\n"
-
+                # [DONE] is ALWAYS the last event, success or failure.
+                # The frontend SSE reader depends on this to stop looping.
+                yield "data: [DONE]\n\n"
         return StreamingResponse(_run(), media_type="text/event-stream")
 
     # ── RAG file → document ingestion ─────────────────────────────────────────
     if kind == "rag_file":
-        async with session["lock"]:
-            existing_store = state.get("rag_store")
-            if existing_store is None:
-                store = await asyncio.get_running_loop().run_in_executor(
-                    None, build_rag_store, str(tmp_path), uid, token,
-                )
-                state["rag_store"] = store
-                state["mode"]      = RAG
-            else:
-                store = await asyncio.get_running_loop().run_in_executor(
-                    None, add_to_store, existing_store, str(tmp_path), uid, token,
-                )
-            if state.get("rag_memory") is None:
-                state["rag_memory"] = make_memory(session["rag_llm"])
-
-        tmp_path.unlink(missing_ok=True)
+        try:
+            async with session["lock"]:
+                existing_store = state.get("rag_store")
+                if existing_store is None:
+                    store = await asyncio.get_running_loop().run_in_executor(
+                        None, build_rag_store, str(tmp_path), uid, token,
+                    )
+                    state["rag_store"] = store
+                    state["mode"]      = RAG
+                else:
+                    store = await asyncio.get_running_loop().run_in_executor(
+                        None, add_to_store, existing_store, str(tmp_path), uid, token,
+                    )
+                if state.get("rag_memory") is None:
+                    state["rag_memory"] = make_memory(session["rag_llm"])
+        except Exception as e:
+            logger.exception("RAG ingestion failed for file=%s token=%s", fname, token)
+            return {"status": "error", "message": f"Failed to process file: {str(e)}"}
+        finally:
+            tmp_path.unlink(missing_ok=True)   # always runs, success or failure
 
         # Sync to DB
         await update_session_mode(token, uid, RAG, db)

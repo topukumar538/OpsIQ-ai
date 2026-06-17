@@ -12,7 +12,7 @@ from config import GROQ_API_KEY, MODEL_NAME, CHAT_TEMPERATURE, RAG_TEMPERATURE, 
 
 def _make_llm(temperature: float) -> ChatGroq:
     return ChatGroq(
-        api_key    =GROQ_API_KEY,
+        api_key    =GROQ_API_KEY, # type: ignore
         model      =MODEL_NAME,       # FIX: ChatGroq uses 'model', not 'model_name'
         temperature=temperature,
         streaming  =True,
