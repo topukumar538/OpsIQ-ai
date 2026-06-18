@@ -56,28 +56,29 @@ from auth.router import limiter
 from core.retriever import get_embeddings
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 
-# @asynccontextmanager
-# async def lifespan(app: FastAPI):
-#     await init_db()
-#     # Preload embeddings model at startup so the first file upload
-#     # doesn't pay the loading cost. get_embeddings() is lru_cached
-#     # so this call warms the cache for all subsequent requests.
-#     logger.info("Preloading embeddings model...")
-#     await asyncio.get_running_loop().run_in_executor(None, get_embeddings)
-#     logger.info("Embeddings model ready.")
-#     cleanup_task = asyncio.create_task(start_cleanup_task())
-#     logger.info("OpsIQ started.")
-#     yield
-#     cleanup_task.cancel()
-#     try:
-#         await cleanup_task
-#     except asyncio.CancelledError:
-#         pass
-#     logger.info("OpsIQ shut down cleanly.")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_db()
+    # Preload embeddings model at startup so the first file upload
+    # doesn't pay the loading cost. get_embeddings() is lru_cached
+    # so this call warms the cache for all subsequent requests.
+    logger.info("Preloading embeddings model...")
+    await asyncio.get_running_loop().run_in_executor(None, get_embeddings)
+    logger.info("Embeddings model ready.")
+    cleanup_task = asyncio.create_task(start_cleanup_task())
+    logger.info("OpsIQ started.")
+    yield
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
+    logger.info("OpsIQ shut down cleanly.")
 
 
 #------------------
 
+"""
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
@@ -91,7 +92,7 @@ async def lifespan(app: FastAPI):
         pass
     logger.info("OpsIQ shut down cleanly.")
 
-
+"""
 #------------------
 
 app = FastAPI(title="OpsIQ", lifespan=lifespan)
