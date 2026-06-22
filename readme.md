@@ -264,14 +264,6 @@ pytest tests/test_auth.py -v
 pytest tests/ -v
 ```
 
----
-
-## Deploying to Railway
-
-1. Push to GitHub
-2. Create new Railway project → deploy from GitHub
-3. Add a PostgreSQL plugin
-4. Set environment variables:
 
 ```env
 GROQ_API_KEY=...
