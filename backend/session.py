@@ -46,7 +46,7 @@ def _make_in_memory_session(
     chat_llm,
     rag_llm,
     pm_llm,
-    state  : dict,
+    state  : dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "db_id"        : db_id,
@@ -89,7 +89,7 @@ async def _load_from_db(token: str, user_id: int) -> Optional[dict[str, Any]]:
         state["is_locked"]  = row.is_locked
 
         # Restore postmortem report — persisted so it survives server restarts.
-        # Without this, the report panel goes blank after Railway redeploys
+        # Without this, the report panel goes blank after Server redeploys
         # even though the session mode and FAISS store restore correctly.
         state["report_str"] = row.report_str or ""
 
@@ -107,7 +107,7 @@ async def _load_from_db(token: str, user_id: int) -> Optional[dict[str, Any]]:
         state["rag_memory"]  = memories["rag_memory"]
         state["pm_memory"]   = memories["pm_memory"]
 
-        session = _make_in_memory_session(row.id, user_id, token, chat_llm, rag_llm, pm_llm, state)
+        session = _make_in_memory_session(row.id, user_id, token, chat_llm, rag_llm, pm_llm, state) # type: ignore
         _sessions[token] = session
 
         logger.info(
@@ -134,7 +134,7 @@ async def create_session(user_id: int, db: AsyncSession) -> dict[str, Any]:
     await db.commit()
     await db.refresh(row)
 
-    session = _make_in_memory_session(row.id, user_id, row.token, chat_llm, rag_llm, pm_llm, state)
+    session = _make_in_memory_session(row.id, user_id, row.token, chat_llm, rag_llm, pm_llm, state) # type: ignore
     _sessions[row.token] = session
 
     logger.info("Created session token=%s for user=%d", row.token, user_id)
@@ -237,15 +237,15 @@ async def update_session_mode(
     await db.commit()
 
 
-async def update_session_faiss_path(
-    token: str, user_id: int, path: str, db: AsyncSession
-) -> None:
-    await db.execute(
-        update(SessionModel)
-        .where(SessionModel.token == token, SessionModel.user_id == user_id)
-        .values(faiss_store_path=path)
-    )
-    await db.commit()
+# async def update_session_faiss_path(
+#     token: str, user_id: int, path: str, db: AsyncSession
+# ) -> None:
+#     await db.execute(
+#         update(SessionModel)
+#         .where(SessionModel.token == token, SessionModel.user_id == user_id)
+#         .values(faiss_store_path=path)
+#     )
+#     await db.commit()
 
 
 async def save_report_to_db(
@@ -259,7 +259,7 @@ async def save_report_to_db(
 
     Why this exists:
         report_str lives in session["state"] in memory but was never written
-        to the DB. After a server restart (Railway deploy, crash, idle shutdown),
+        to the DB. After a server restart (deploy, crash, idle shutdown),
         the session restores from DB — mode, is_locked, and FAISS all come back
         correctly, but report_str was empty string, leaving the report panel blank.
         Now it's saved here right after the postmortem pipeline completes.
@@ -285,7 +285,7 @@ async def touch_session(token: str, user_id: int, db: AsyncSession) -> None:
 
 # ── Graph runner ──────────────────────────────────────────────────────────────
 
-def run_graph(token: str, user_id: int, user_input: str = "", file_path: str = "") -> dict:
+def _run_graph(token: str, user_id: int, user_input: str = "", file_path: str = "") -> dict:
     """
     Synchronous graph runner — called via run_in_executor from run_graph_async.
     Uses the cached session — must be loaded before calling this.
@@ -318,7 +318,7 @@ async def run_graph_async(
     """Async wrapper — moves blocking LangGraph pipeline off the event loop."""
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
-        None, run_graph, token, user_id, user_input, file_path,
+        None, _run_graph, token, user_id, user_input, file_path,
     )
 
 

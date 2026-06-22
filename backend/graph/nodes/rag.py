@@ -1,5 +1,6 @@
 # Location: backend/graph/nodes/rag.py
 from pathlib import Path
+
 from langchain.prompts import PromptTemplate
 
 from core.memory import make_memory, get_history, save_turn
@@ -25,7 +26,6 @@ Relevant document context:
 
 Question: {input}
 """.strip())
-
 
 def rag_node(state: OpsState) -> OpsState:
     """
@@ -90,7 +90,11 @@ def rag_node(state: OpsState) -> OpsState:
     memory  = state.get("rag_memory") or make_memory(llm)
     history = get_history(memory)
     context = retrieve(state["rag_store"], state["user_input"], RAG_TOP_K)
-    filled  = prompt.format(history=history, context=context, input=state["user_input"])
+    filled = prompt.format(
+        history=history,
+        context=context,
+        input=state["user_input"],
+    )
     result  = llm.invoke(filled)
     response = str(result.content)
 

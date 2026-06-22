@@ -13,7 +13,6 @@
       --bg        : #0a0a0a;
       --surface   : #141414;
       --surface2  : #1e1e1e;
-      --surface3  : #252525;
       --border    : #2a2a2a;
       --border2   : #333;
       --text      : #f0f0f0;
@@ -21,7 +20,6 @@
       --faint     : #444;
       --accent    : #7c6ff7;
       --accent2   : #6358e8;
-      --accent-bg : rgba(124,111,247,0.08);
       --accent-glow: rgba(124,111,247,0.18);
       --green     : #4ade80;
       --red       : #f87171;
@@ -29,14 +27,17 @@
     }
 
     html, body {
-      height: 100%; background: var(--bg); color: var(--text);
-      font-family: 'Inter', sans-serif; overflow: hidden;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
     }
 
+    /* ── Layout ── */
     .shell {
       display: grid;
       grid-template-columns: 1fr 420px;
-      height: 100vh;
+      min-height: 100vh;
     }
 
     /* ── Left panel ── */
@@ -67,15 +68,9 @@
     }
 
     .console-log {
-      position: absolute; inset: 0;
-      padding: 32px 40px;
-      font-family: var(--mono);
-      font-size: 11px;
-      line-height: 1.9;
-      color: var(--faint);
-      overflow: hidden;
-      z-index: 2;
-      user-select: none;
+      position: absolute; inset: 0; padding: 32px 40px;
+      font-family: var(--mono); font-size: 11px; line-height: 1.9;
+      color: var(--faint); overflow: hidden; z-index: 2; user-select: none;
     }
     .log-line { opacity: 0; animation: logfade 0.4s ease forwards; }
     .log-line.ok   { color: #3a5c3a; }
@@ -90,16 +85,13 @@
     .left-bottom { position: relative; z-index: 3; }
     .left-logo { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
     .logo-mark {
-      width: 40px; height: 40px; border-radius: 10px;
-      background: var(--accent); display: flex; align-items: center;
-      justify-content: center; font-size: 14px; font-weight: 700; color: #fff;
+      width: 40px; height: 40px; border-radius: 10px; background: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700; color: #fff;
     }
     .logo-name { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
     .logo-sub  { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.5px; margin-top: 2px; }
-    .left-tagline {
-      font-size: 22px; font-weight: 600; line-height: 1.45;
-      letter-spacing: -0.4px; margin-bottom: 16px;
-    }
+    .left-tagline { font-size: 22px; font-weight: 600; line-height: 1.45; letter-spacing: -0.4px; margin-bottom: 16px; }
     .left-tagline em { font-style: normal; color: var(--accent); }
     .left-chips { display: flex; gap: 8px; flex-wrap: wrap; }
     .lchip {
@@ -112,72 +104,58 @@
     .right {
       display: flex; flex-direction: column;
       justify-content: center; align-items: center;
-      padding: 48px 40px;
-      background: var(--bg);
-      overflow-y: auto;
+      padding: 48px 40px; background: var(--bg); overflow-y: auto;
     }
     .form-wrap { width: 100%; max-width: 340px; }
+
+    /* ── Mobile top branding (hidden on desktop) ── */
+    .mobile-brand {
+      display: none;
+      align-items: center; gap: 12px;
+      margin-bottom: 32px;
+    }
+    .mobile-brand .logo-mark {
+      width: 36px; height: 36px; border-radius: 9px;
+      background: var(--accent); display: flex; align-items: center;
+      justify-content: center; font-size: 13px; font-weight: 700; color: #fff;
+    }
+    .mobile-brand .logo-name { font-size: 17px; font-weight: 600; }
 
     .form-head { margin-bottom: 32px; }
     .form-head h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.3px; margin-bottom: 6px; }
     .form-head p  { font-size: 13px; color: var(--muted); line-height: 1.5; }
 
     .field { margin-bottom: 16px; }
-    .field label {
-      display: block; font-size: 12px; font-weight: 500;
-      color: var(--muted); margin-bottom: 6px; letter-spacing: 0.2px;
-    }
+    .field label { display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 6px; }
     .field input {
       width: 100%; padding: 10px 13px;
       background: var(--surface); border: 1px solid var(--border2);
-      border-radius: 9px; color: var(--text);
-      font-size: 14px; font-family: 'Inter', sans-serif;
+      border-radius: 9px; color: var(--text); font-size: 14px; font-family: 'Inter', sans-serif;
       outline: none; transition: border-color 0.15s, box-shadow 0.15s;
     }
-    .field input:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(124,111,247,0.12);
-    }
+    .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124,111,247,0.12); }
     .field input::placeholder { color: var(--faint); }
     .field input.err { border-color: var(--red); box-shadow: 0 0 0 3px rgba(248,113,113,0.1); }
-
     .field-err { font-size: 12px; color: var(--red); margin-top: 6px; display: none; }
     .field-err.show { display: block; }
 
     .btn-submit {
-      width: 100%; padding: 11px;
-      background: var(--accent); border: none; border-radius: 9px;
-      color: #fff; font-size: 14px; font-weight: 600;
-      font-family: 'Inter', sans-serif; cursor: pointer;
-      transition: background 0.15s, opacity 0.15s;
-      margin-top: 6px; letter-spacing: -0.1px;
+      width: 100%; padding: 11px; background: var(--accent); border: none; border-radius: 9px;
+      color: #fff; font-size: 14px; font-weight: 600; font-family: 'Inter', sans-serif;
+      cursor: pointer; transition: background 0.15s, opacity 0.15s; margin-top: 6px;
     }
     .btn-submit:hover:not(:disabled) { background: var(--accent2); }
     .btn-submit:disabled { opacity: 0.45; cursor: not-allowed; }
 
-    /* ── Error / success banners ── */
     .banner {
-      display: none;
-      border-radius: 9px;
-      padding: 11px 14px;
-      font-size: 13px;
-      line-height: 1.55;
-      margin-bottom: 18px;
+      display: none; border-radius: 9px; padding: 11px 14px;
+      font-size: 13px; line-height: 1.55; margin-bottom: 18px;
     }
     .banner.show { display: flex; align-items: flex-start; gap: 9px; }
     .banner-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
     .banner-text { flex: 1; }
-
-    #form-error {
-      background: rgba(248,113,113,0.08);
-      border: 1px solid rgba(248,113,113,0.25);
-      color: var(--red);
-    }
-    #form-success {
-      background: rgba(74,222,128,0.06);
-      border: 1px solid rgba(74,222,128,0.2);
-      color: var(--green);
-    }
+    #form-error   { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.25); color: var(--red); }
+    #form-success { background: rgba(74,222,128,0.06);  border: 1px solid rgba(74,222,128,0.2);  color: var(--green); }
 
     .divider {
       display: flex; align-items: center; gap: 10px;
@@ -191,21 +169,27 @@
 
     .spinner {
       display: inline-block; width: 14px; height: 14px;
-      border: 2px solid rgba(255,255,255,0.3);
-      border-top-color: #fff; border-radius: 50%;
-      animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px;
+      border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff;
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+      vertical-align: middle; margin-right: 6px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ── Responsive ── */
     @media (max-width: 680px) {
-      .shell { grid-template-columns: 1fr; }
+      .shell { grid-template-columns: 1fr; min-height: 100vh; }
       .left  { display: none; }
-      .right { padding: 40px 24px; }
+      .right { padding: 32px 24px; justify-content: flex-start; padding-top: 48px; }
+      .mobile-brand { display: flex; }
+    }
+
+    @media (max-width: 380px) {
+      .right { padding: 32px 16px; }
+      .form-head h1 { font-size: 20px; }
     }
   </style>
 </head>
 <body>
-
 <div class="shell">
 
   <!-- ── Left: ambient console ── -->
@@ -237,18 +221,21 @@
   <div class="right">
     <div class="form-wrap">
 
+      <!-- shown only on mobile -->
+      <div class="mobile-brand">
+        <div class="logo-mark">IQ</div>
+        <div class="logo-name">OpsIQ</div>
+      </div>
+
       <div class="form-head">
         <h1>Welcome back</h1>
         <p>Sign in to your OpsIQ account to continue.</p>
       </div>
 
-      <!-- Error banner -->
       <div class="banner" id="form-error">
         <span class="banner-icon">⚠</span>
         <span class="banner-text" id="form-error-text"></span>
       </div>
-
-      <!-- Success banner -->
       <div class="banner" id="form-success">
         <span class="banner-icon">✓</span>
         <span class="banner-text" id="form-success-text"></span>
@@ -269,18 +256,12 @@
       <button class="btn-submit" id="btn-login" onclick="doLogin()">Sign in</button>
 
       <div class="divider">or</div>
-
-      <div class="link-row">
-        Don't have an account? <a href="/signup">Create one</a>
-      </div>
-
+      <div class="link-row">Don't have an account? <a href="/signup">Create one</a></div>
     </div>
   </div>
 
 </div>
-
 <script>
-  /* ── Console log animation ── */
   const LINES = [
     { cls: 'info', t: '[00:00:01] system   boot sequence initiated' },
     { cls: 'ok',   t: '[00:00:02] kernel   loaded modules: faiss, langchain, groq' },
@@ -313,53 +294,37 @@
   }
   runConsole();
 
-  /* ── Error message parser ──────────────────────────────────────────────────
-     FastAPI returns errors in two shapes:
-       - HTTPException:  { "detail": "some string" }
-       - Pydantic error: { "detail": [{ "loc": [...], "msg": "...", "type": "..." }, ...] }
-     Without handling both, the second shape prints as "[object Object]".
-  ── */
   function parseApiError(data) {
     if (!data || !data.detail) return 'Something went wrong. Please try again.';
     if (typeof data.detail === 'string') return data.detail;
     if (Array.isArray(data.detail)) {
-      // Pydantic v2 validation errors — extract human-readable messages
-      return data.detail
-        .map(e => {
-          const field = e.loc ? e.loc[e.loc.length - 1] : '';
-          const msg   = e.msg || 'Invalid value';
-          return field && field !== 'body' ? `${field}: ${msg}` : msg;
-        })
-        .join(' · ');
+      return data.detail.map(e => {
+        const field = e.loc ? e.loc[e.loc.length - 1] : '';
+        const msg   = e.msg || 'Invalid value';
+        return field && field !== 'body' ? `${field}: ${msg}` : msg;
+      }).join(' · ');
     }
     return 'Something went wrong. Please try again.';
   }
 
-  /* ── UI helpers ── */
   function clearErrors() {
     ['email', 'password'].forEach(f => {
       document.getElementById(`err-${f}`).classList.remove('show');
       document.getElementById(f).classList.remove('err');
     });
-    hideBanner('form-error');
-    hideBanner('form-success');
+    document.getElementById('form-error').classList.remove('show');
+    document.getElementById('form-success').classList.remove('show');
   }
 
   function showFieldError(id, msg) {
     const err = document.getElementById(`err-${id}`);
-    err.textContent = msg;
-    err.classList.add('show');
+    err.textContent = msg; err.classList.add('show');
     document.getElementById(id).classList.add('err');
   }
 
   function showBanner(id, msg) {
-    const banner = document.getElementById(id);
     document.getElementById(`${id}-text`).textContent = msg;
-    banner.classList.add('show');
-  }
-
-  function hideBanner(id) {
-    document.getElementById(id).classList.remove('show');
+    document.getElementById(id).classList.add('show');
   }
 
   function setLoading(on) {
@@ -368,44 +333,30 @@
     btn.innerHTML = on ? '<span class="spinner"></span>Signing in…' : 'Sign in';
   }
 
-  /* ── Login ── */
   async function doLogin() {
     clearErrors();
     const email    = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
     let valid = true;
 
-    if (!email) {
-      showFieldError('email', 'Email address is required.');
-      valid = false;
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      showFieldError('email', 'Enter a valid email address.');
-      valid = false;
-    }
-    if (!password) {
-      showFieldError('password', 'Password is required.');
-      valid = false;
-    }
+    if (!email) { showFieldError('email', 'Email address is required.'); valid = false; }
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showFieldError('email', 'Enter a valid email address.'); valid = false; }
+    if (!password) { showFieldError('password', 'Password is required.'); valid = false; }
     if (!valid) return;
 
     setLoading(true);
     try {
       const res  = await fetch('/auth/login', {
-        method     : 'POST',
-        headers    : { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body       : JSON.stringify({ email, password }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
-
       if (res.ok) {
         showBanner('form-success', `Welcome back, ${data.username}! Redirecting…`);
         setTimeout(() => window.location.href = '/app', 900);
       } else {
         const msg = parseApiError(data);
         showBanner('form-error', msg);
-
-        // Highlight the relevant field if the error is field-specific
         if (/email/i.test(msg))    document.getElementById('email').classList.add('err');
         if (/password/i.test(msg)) document.getElementById('password').classList.add('err');
       }
@@ -418,7 +369,6 @@
 
   document.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 
-  // Redirect immediately if already authenticated
   (async () => {
     try {
       const r = await fetch('/auth/me', { credentials: 'include' });

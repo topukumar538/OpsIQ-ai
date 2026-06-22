@@ -6,9 +6,8 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 
 from config import PM_CHUNK_LINES, PM_OVERLAP_LINES
-from core.retriever import get_embeddings
 
-ERROR_PATTERNS = ["ERROR", "CRITICAL", "FATAL", "EXCEPTION", "TRACEBACK", "FAILURE", "FAILED"]
+
 
 
 def read_log(filepath: str) -> str:
@@ -29,60 +28,60 @@ def chunk_by_lines(text: str) -> list[Document]:
     return chunks
 
 
+# Single regex pattern
+ERROR_PATTERN = re.compile(r"([A-Za-z]+(?:Error|Exception|Failure|Failed|Critical|Fatal))", re.IGNORECASE)
+
 def extract_errors(text: str) -> dict:
     """
     Count error occurrences per named error type.
-
-    Bug fixed: the original code had nested loops — outer over lines, inner
-    over ERROR_PATTERNS. A line containing both "ERROR" and "EXCEPTION"
-    (e.g. "ERROR Exception in thread main") was counted twice, once for each
-    matching pattern, inflating the totals in the report.
-
-    Fix: break after the first matching pattern per line so each line is
-    counted exactly once regardless of how many patterns it matches.
     """
     error_counts = {}
     for line in text.splitlines():
-        line_upper = line.upper()
-        for pattern in ERROR_PATTERNS:
-            if pattern in line_upper:
-                match = re.search(
-                    r"([A-Za-z]+(?:Error|Exception|Failure|Failed|Critical|Fatal))", line,
-                )
-                name = match.group(1) if match else pattern
-                error_counts[name] = error_counts.get(name, 0) + 1
-                break   # ← stop after first matching pattern per line
+        match = ERROR_PATTERN.search(line)
+        if match:
+            name = match.group(1)
+            error_counts[name] = error_counts.get(name, 0) + 1
     return error_counts
 
 
-def build_store(raw_log: str, llm) -> tuple:
+
+# Accept embeddings as a parameter instead of constructing inside
+def build_store(raw_log: str, llm, embeddings) -> tuple:
     print("  Chunking log...")
     chunks = chunk_by_lines(raw_log)
     print(f"  {len(chunks)} chunks created")
 
     error_counts = extract_errors(raw_log)
-    error_lines  = "\n".join([f"- {n}: {c} occurrence(s)" for n, c in error_counts.items()])
-    error_doc    = Document(
-        page_content=f"Major errors found:\n{error_lines or 'None detected'}",
-        metadata={"type": "error_summary"},
-    )
     print(f"  {len(error_counts)} unique error type(s) detected")
 
+    # Skip noisy "None detected" doc entirely if no errors found
+    extra_docs = []
+    if error_counts:
+        error_lines = "\n".join([f"- {n}: {c} occurrence(s)" for n, c in error_counts.items()])
+        extra_docs.append(Document(
+            page_content=f"Major errors found:\n{error_lines}",
+            metadata={"type": "error_summary"},
+        ))
+
     print("  Generating log summary...")
+    # Slice at a newline boundary to avoid cutting mid-sentence
+    safe_slice = raw_log[:8000].rsplit('\n', 1)[0]
     summary_response = llm.invoke(
         f"Summarize this log in 5-8 sentences. Focus on services involved, "
-        f"what went wrong, and the overall timeline.\n\n{raw_log[:8000]}"
+        f"what went wrong, and the overall timeline.\n\n{safe_slice}"
     )
-    summary_doc = Document(
-        page_content=f"Log summary:\n{summary_response.content}",
+    summary_text = summary_response.content
+    extra_docs.append(Document(
+        page_content=f"Log summary:\n{summary_text}",
         metadata={"type": "llm_summary"},
-    )
+    ))
 
-    all_docs = chunks + [error_doc, summary_doc]
+    all_docs = chunks + extra_docs
     print(f"  Embedding {len(all_docs)} documents into FAISS...")
-    store = FAISS.from_documents(all_docs, get_embeddings())
+    store = FAISS.from_documents(all_docs, embeddings)
     print(f"  FAISS store ready. {store.index.ntotal} vectors.\n")
 
+    # Return summary_text so callers can surface it without re-querying
     return store, error_counts
 
 

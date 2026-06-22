@@ -46,7 +46,7 @@ class Session(Base):
     name            : Mapped[str]        = mapped_column(String(100), nullable=False, default="New session")
     mode            : Mapped[str]        = mapped_column(String(20), nullable=False, default="chat")
     is_locked       : Mapped[bool]       = mapped_column(Boolean, nullable=False, default=False)
-    faiss_store_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # faiss_store_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     # Persisted so the postmortem report survives server restarts.
     report_str      : Mapped[str]        = mapped_column(Text, nullable=False, default="")
     created_at      : Mapped[datetime]   = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

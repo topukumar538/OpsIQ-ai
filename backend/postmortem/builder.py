@@ -1,6 +1,8 @@
 # Location: backend/postmortem/builder.py
 from typing import Any
 
+from core.retriever import get_embeddings
+
 from langgraph.graph import StateGraph, END, START
 
 from core.faiss_store import save_store
@@ -45,7 +47,8 @@ def run_postmortem(
     persist the store to disk, and return results for the session state.
     """
     raw_log = read_log(log_path)
-    store, error_counts = build_store(raw_log, llm)
+    embeddings = get_embeddings()  # only once
+    store, error_counts = build_store(raw_log, llm, embeddings)
 
     pm_state = build_postmortem_graph().invoke({
         "llm":               llm,

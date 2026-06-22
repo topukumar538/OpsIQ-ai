@@ -26,7 +26,7 @@ def _route_from_start(state: OpsState) -> str:
 def _route_from_chat(state: OpsState) -> str:
     """After chat node — check if a file was uploaded and needs routing."""
     if state.get("file_path"):
-        suffix = state["file_path"].rsplit(".", 1)[-1].lower()
+        suffix = state["file_path"].rsplit(".", 1)[-1].lower() # type: ignore
         if suffix == "log": return "postmortem"
         return "rag"
     return END
@@ -35,7 +35,7 @@ def _route_from_chat(state: OpsState) -> str:
 def _route_from_rag(state: OpsState) -> str:
     """After rag node — a log file in RAG mode produces a warning, not a transition."""
     if state.get("file_path"):
-        suffix = state["file_path"].rsplit(".", 1)[-1].lower()
+        suffix = state["file_path"].rsplit(".", 1)[-1].lower() # type: ignore
         if suffix == "log": return "postmortem"
     return END
 
@@ -53,7 +53,7 @@ def build_graph() -> StateGraph:
     graph.add_conditional_edges("rag",        _route_from_rag,  {"postmortem": "postmortem", END: END})
     graph.add_edge("postmortem", END)
 
-    return graph.compile()
+    return graph.compile() # type: ignore
 
 
 def make_initial_state(llm) -> OpsState:

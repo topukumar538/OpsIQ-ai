@@ -36,7 +36,7 @@ from session import (
     save_report_to_db,
     start_cleanup_task,
     touch_session,
-    update_session_faiss_path,
+    # update_session_faiss_path,
     update_session_mode,
     update_session_name,
 )
@@ -76,24 +76,7 @@ async def lifespan(app: FastAPI):
     logger.info("OpsIQ shut down cleanly.")
 
 
-#------------------
 
-"""
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    await init_db()
-    cleanup_task = asyncio.create_task(start_cleanup_task())
-    logger.info("OpsIQ started.")
-    yield
-    cleanup_task.cancel()
-    try:
-        await cleanup_task
-    except asyncio.CancelledError:
-        pass
-    logger.info("OpsIQ shut down cleanly.")
-
-"""
-#------------------
 
 app = FastAPI(title="OpsIQ", lifespan=lifespan)
 
@@ -222,6 +205,69 @@ async def get_memory(session: dict = Depends(get_active_session)):
         ],
     }
 
+
+@app.get("/session/messages")
+async def get_messages(
+    before  : int  = 0,     # message id to paginate from (0 = latest)
+    limit   : int  = 20,
+    session : dict = Depends(get_active_session),
+    db      : AsyncSession = Depends(get_db),
+):
+    """
+    Return paginated message history for the current session.
+    
+    Used by the frontend "Load more" button to fetch older messages.
+    Separate from /session/memory which is for LLM context restoration.
+    
+    - before=0  → return latest 20 messages
+    - before=N  → return 20 messages older than message id N
+    """
+    from auth.models import SessionMessage
+    from sqlalchemy import select, desc
+ 
+    db_id = session["db_id"]
+ 
+    query = (
+        select(SessionMessage)
+        .where(SessionMessage.session_id == db_id)
+    )
+ 
+    if before > 0:
+        query = query.where(SessionMessage.id < before)
+ 
+    query = query.order_by(desc(SessionMessage.id)).limit(limit)
+ 
+    result   = await db.execute(query)
+    messages = list(reversed(result.scalars().all()))
+ 
+    # Check if there are even older messages
+    has_more = False
+    if messages:
+        oldest_id = messages[0].id
+        older = await db.execute(
+            select(SessionMessage.id)
+            .where(
+                SessionMessage.session_id == db_id,
+                SessionMessage.id < oldest_id,
+            )
+            .limit(1)
+        )
+        has_more = older.scalar_one_or_none() is not None
+ 
+    return {
+        "messages": [
+            {
+                "id"     : m.id,
+                "role"   : m.role,
+                "content": m.content,
+                "mode"   : m.mode,
+            }
+            for m in messages
+        ],
+        "has_more": has_more,
+        "oldest_id": messages[0].id if messages else None,
+    }
+ 
 
 # ── Chat ──────────────────────────────────────────────────────────────────────
 class ChatRequest(BaseModel):
@@ -392,11 +438,11 @@ async def upload(
 
                 # Pipeline succeeded — persist everything to DB
                 await update_session_mode(token, uid, POSTMORTEM, db, is_locked=True)
-                await update_session_faiss_path(
-                    token, uid,
-                    str(Path(FAISS_STORE_DIR) / str(uid) / token / "pm"),
-                    db,
-                )
+                # await update_session_faiss_path(
+                #     token, uid,
+                #     str(Path(FAISS_STORE_DIR) / str(uid) / token / "pm"),
+                #     db,
+                # )
                 await update_session_name(token, uid, f"PM: {fname}", db)
                 await record_file(db, db_id, fname, file_hash)
                 await save_report_to_db(token, uid, result.get("report_str", ""), db)
@@ -454,11 +500,11 @@ async def upload(
 
         # Sync to DB
         await update_session_mode(token, uid, RAG, db)
-        await update_session_faiss_path(
-            token, uid,
-            str(Path(FAISS_STORE_DIR) / str(uid) / token / "rag"),
-            db,
-        )
+        # await update_session_faiss_path(
+        #     token, uid,
+        #     str(Path(FAISS_STORE_DIR) / str(uid) / token / "rag"),
+        #     db,
+        # )
         # Auto-name from first uploaded filename if no files yet
         from sqlalchemy import select as sa_select
         existing = await db.execute(

@@ -13,11 +13,7 @@ Store layout on disk:
           index.faiss
           index.pkl
 
-Why user_id in path:
-    Previously the path was just /{session_token}/.
-    If two users somehow had the same token, their stores would collide.
-    Including user_id makes paths globally unique and adds a second layer
-    of isolation — even a path traversal bug can't cross user boundaries.
+
 """
 import logging
 import shutil
@@ -93,8 +89,6 @@ def delete_store(user_id: int, token: str) -> None:
     Remove all on-disk stores for a session.
 
     Called when a session is explicitly deleted by the user.
-    TTL-based memory eviction does NOT call this — stores stay on disk
-    so a reconnecting user gets their context back automatically.
     """
     session_dir = Path(FAISS_STORE_DIR) / str(user_id) / token
     if session_dir.exists():

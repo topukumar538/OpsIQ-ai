@@ -21,13 +21,15 @@ _splitter = RecursiveCharacterTextSplitter(
     chunk_overlap=RAG_CHUNK_OVERLAP,
 )
 
-
-def hash_file(file_path: str) -> str:
-    """SHA-256 hex digest of file contents — used for duplicate detection."""
+def hash_file(file_path: str, chunk_size: int = 65536) -> str:
+    """Return SHA-256 hex digest of file contents for duplicate detection."""
     h = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
+    try:
+        with Path(file_path).open("rb") as f:
+            for chunk in iter(lambda: f.read(chunk_size), b""):
+                h.update(chunk)
+    except FileNotFoundError:
+        raise ValueError(f"File not found: {file_path}")
     return h.hexdigest()
 
 

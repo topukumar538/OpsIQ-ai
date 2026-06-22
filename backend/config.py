@@ -63,23 +63,13 @@ class Settings(BaseSettings):
     secret_key      : str                               = ""
     cookie_name     : str                               = "opsiq_session"
     cookie_max_age  : int                               = 7 * 24 * 60 * 60
-    cookie_secure   : bool                              = False
+    cookie_secure   : bool                              = True
     cookie_samesite : Literal["lax", "strict", "none"] = "lax"
     bcrypt_rounds   : int                               = 12
     session_ttl_seconds              : int = 2 * 60 * 60
     session_cleanup_interval_seconds : int = 15 * 60
 
-    # ── CORS ──────────────────────────────────────────────────────────────────
-    # Comma-separated list of allowed origins.
-    #
-    # Why not "*":
-    #   The CORS spec forbids "Access-Control-Allow-Origin: *" combined with
-    #   "Access-Control-Allow-Credentials: true". Browsers reject the response
-    #   entirely — cookies never get set and login silently fails.
-    #   An explicit origin list is required whenever cookies are involved.
-    #
-    # Add your Railway URL in .env:
-    #   ALLOWED_ORIGINS=https://opsiq.up.railway.app,https://yourfrontend.com
+
     allowed_origins: str = (
         "http://localhost:5173,"
         "http://localhost:8000,"
@@ -179,7 +169,3 @@ ALLOWED_ORIGINS                  = settings.allowed_origins_list   # ← new exp
 RAG_EXTENSIONS       = {".pdf", ".docx", ".doc", ".txt"}
 POSTMORTEM_EXTENSION = ".log"
 
-# ── .env.example addition ─────────────────────────────────────────────────────
-# Add this line to your .env.example so teammates know to set it:
-#
-# ALLOWED_ORIGINS=http://localhost:5173,https://yourapp.up.railway.app
