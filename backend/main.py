@@ -44,7 +44,7 @@ from session import (
 logger = logging.getLogger(__name__)
 
 _BACKEND_DIR = Path(__file__).resolve().parent
-_FRONTEND_DIR = _BACKEND_DIR.parent / "frontend"
+_FRONTEND_DIR = _BACKEND_DIR / "frontend"
 
 
 
