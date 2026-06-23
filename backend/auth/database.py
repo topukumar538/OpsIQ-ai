@@ -11,12 +11,16 @@ logger = logging.getLogger(__name__)
 
 _is_postgres = DATABASE_URL.startswith("postgresql")
 
-_engine_kwargs: dict = {"echo": False, "pool_pre_ping": True}
+_connect_args = {"ssl": True}
 if _is_postgres and DB_SCHEMA:
-    # Ensure every connection uses the app schema (Postgres 15+ public schema fix).
-    _engine_kwargs["connect_args"] = {"server_settings": {"search_path": DB_SCHEMA}}
+    _connect_args["server_settings"] = {"search_path": DB_SCHEMA}
 
-engine = create_async_engine(DATABASE_URL, **_engine_kwargs)
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=False,
+    pool_pre_ping=True,
+    connect_args=_connect_args,
+)
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
@@ -28,8 +32,6 @@ AsyncSessionLocal = async_sessionmaker(
 async def init_db() -> None:
     async with engine.begin() as conn:
         if _is_postgres and DB_SCHEMA:
-            # Regular users cannot CREATE in schema public on Postgres 15+.
-            # Create and use a dedicated schema owned by the connected user.
             await conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{DB_SCHEMA}"'))
             await conn.execute(text(f'SET search_path TO "{DB_SCHEMA}", public'))
             logger.info("Using Postgres schema: %s", DB_SCHEMA)
