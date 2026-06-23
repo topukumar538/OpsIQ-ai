@@ -48,4 +48,3 @@ email-validator
 # ── Testing ───────────────────────────────────────────────────────────────────
 pytest==8.3.3
 pytest-asyncio==0.24.0
-psycopg2-binary
