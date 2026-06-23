@@ -1,0 +1,43 @@
+# Location: docker-compose.yml (project root)
+version: "3.9"
+
+services:
+
+  db:
+    image: postgres:15-alpine
+    container_name: opsiq_db
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: opsiq
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser -d opsiq"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: opsiq_app
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Override DATABASE_URL to use the Docker service name instead of localhost
+      DATABASE_URL: postgresql+asyncpg://myuser:mypassword@db:5432/opsiq
+    depends_on:
+      db:
+        condition: service_healthy   # wait for Postgres to be ready before starting app
+    volumes:
+      - faiss_data:/tmp/opsiq_stores  # persist FAISS stores across container restarts
+
+volumes:
+  postgres_data:   # Postgres data survives container restarts
+  faiss_data:      # FAISS vector stores survive container restarts

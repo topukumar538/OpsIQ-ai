@@ -1,0 +1,26 @@
+# Location: backend/.dockerignore
+__pycache__/
+*.pyc
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+venv/
+.venv/
+env/
+*.env
+.env
+*.index
+*.faiss
+faiss_store/
+*.db
+*.sqlite3
+*.log
+logs/
+.DS_Store
+.vscode/
+.idea/
+tests/
+.pytest_cache/
