@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>OpsIQ</title>
+<style>
+  :root {
+    --bg:        #0f1117;
+    --sidebar:   #161b27;
+    --surface:   #1e2535;
+    --border:    #2a3147;
+    --accent:    #4f8ef7;
+    --accent-dim:#1e3a6e;
+    --text:      #e2e8f0;
+    --muted:     #64748b;
+    --danger:    #ef4444;
+    --chat-bg:   #131720;
+    --user-msg:  #1e2d4a;
+    --ai-msg:    #1a2030;
+    --radius:    8px;
+    --font:      'Inter', system-ui, sans-serif;
+    --mono:      'JetBrains Mono', 'Fira Code', monospace;
+    --sidebar-w: 260px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); display: flex; }
+
+  /* ── Sidebar ─────────────────────────────────────────────────────────── */
+  #sidebar {
+    width: var(--sidebar-w); min-width: var(--sidebar-w);
+    background: var(--sidebar); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; height: 100vh;
+    transition: transform 0.25s ease, width 0.25s ease, min-width 0.25s ease;
+    position: relative; z-index: 100;
+  }
+  #sidebar.collapsed { transform: translateX(calc(-1 * var(--sidebar-w))); width: 0; min-width: 0; }
+  #sidebar-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5); z-index: 99;
+  }
+  #sidebar-overlay.visible { display: block; }
+  #sidebar-header { padding: 16px 14px 12px; border-bottom: 1px solid var(--border); }
+  #sidebar-header h1 { font-size: 16px; font-weight: 700; color: var(--accent); letter-spacing: -0.3px; margin-bottom: 10px; }
+  #new-session-btn {
+    width: 100%; background: var(--accent-dim); border: 1px solid var(--accent);
+    color: var(--accent); font-size: 13px; font-weight: 500; padding: 8px 12px;
+    border-radius: var(--radius); cursor: pointer;
+    display: flex; align-items: center; gap: 6px; transition: background 0.15s;
+  }
+  #new-session-btn:hover { background: #254a8a; }
+  #sessions-list { flex: 1; overflow-y: auto; padding: 8px 6px; }
+  #sessions-list::-webkit-scrollbar { width: 4px; }
+  #sessions-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  .session-item {
+    display: flex; align-items: center; padding: 8px 10px;
+    border-radius: var(--radius); cursor: pointer; gap: 8px; margin-bottom: 2px;
+    border: 1px solid transparent; transition: background 0.12s; position: relative;
+  }
+  .session-item:hover { background: var(--surface); }
+  .session-item.active { background: var(--surface); border-color: var(--border); }
+  .session-icon { font-size: 14px; flex-shrink: 0; }
+  .session-info { flex: 1; min-width: 0; }
+  .session-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+  .session-meta { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  .session-delete {
+    opacity: 0; background: none; border: none; color: var(--muted);
+    cursor: pointer; font-size: 14px; padding: 2px 4px; border-radius: 4px;
+    transition: opacity 0.12s, color 0.12s; flex-shrink: 0;
+  }
+  .session-item:hover .session-delete { opacity: 1; }
+  .session-delete:hover { color: var(--danger); }
+  .sessions-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 24px 12px; line-height: 1.6; }
+  #sidebar-footer {
+    padding: 12px 14px; border-top: 1px solid var(--border);
+    font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px;
+  }
+  #sidebar-footer .avatar {
+    width: 26px; height: 26px; border-radius: 50%; background: var(--accent-dim);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: var(--accent); flex-shrink: 0;
+  }
+  #user-email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  #logout-btn {
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    font-size: 11px; padding: 4px 8px; border-radius: 5px;
+    cursor: pointer; flex-shrink: 0; transition: all 0.15s; white-space: nowrap;
+  }
+  #logout-btn:hover { border-color: var(--danger); color: var(--danger); }
+
+  /* ── Main ────────────────────────────────────────────────────────────── */
+  #main { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden; min-width: 0; }
+
+  /* ── Topbar ──────────────────────────────────────────────────────────── */
+  #topbar {
+    height: 52px; background: var(--sidebar); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 16px; gap: 10px; flex-shrink: 0;
+  }
+  #sidebar-toggle {
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    width: 32px; height: 32px; border-radius: var(--radius); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0; transition: all 0.15s;
+  }
+  #sidebar-toggle:hover { border-color: var(--accent); color: var(--accent); }
+  #session-title { font-size: 14px; font-weight: 600; color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #mode-badge { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+  .mode-chat       { background: #1a2f1a; color: #4ade80; }
+  .mode-rag        { background: #1a2040; color: #60a5fa; }
+  .mode-postmortem { background: #2d1a1a; color: #f87171; }
+  #upload-btn {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); font-size: 13px; padding: 6px 12px;
+    border-radius: var(--radius); cursor: pointer;
+    display: flex; align-items: center; gap: 6px;
+    transition: border-color 0.15s; white-space: nowrap; flex-shrink: 0;
+  }
+  #upload-btn:hover { border-color: var(--accent); }
+  #file-input { display: none; }
+
+  /* ── Chat area ───────────────────────────────────────────────────────── */
+  #chat-area { flex: 1; overflow-y: auto; padding: 20px 0; background: var(--chat-bg); }
+  #chat-area::-webkit-scrollbar { width: 4px; }
+  #chat-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  /* ── Load more ───────────────────────────────────────────────────────── */
+  #load-more-wrap { max-width: 760px; margin: 0 auto; padding: 0 16px 8px; }
+  #load-more-btn {
+    display: none; width: 100%; padding: 8px;
+    background: transparent; border: 1px solid var(--border);
+    color: var(--muted); font-size: 12px; border-radius: var(--radius);
+    cursor: pointer; transition: all 0.15s;
+  }
+  #load-more-btn:hover { border-color: var(--accent); color: var(--accent); }
+  #load-more-btn.visible { display: block; }
+
+  /* ── Messages ────────────────────────────────────────────────────────── */
+  .message { max-width: 760px; margin: 0 auto 16px; padding: 0 16px; }
+  /* streaming state — pre-wrap so newlines render during token-by-token stream */
+  .message-inner.streaming { white-space: pre-wrap; }
+
+  /* change the default from pre-wrap to normal */
+  .message-inner {
+    padding: 12px 16px; border-radius: var(--radius);
+    font-size: 14px; line-height: 1.7;
+    white-space: normal;   /* ← was pre-wrap, now normal */
+  }
+  .user .message-inner { background: var(--user-msg); color: var(--text); }
+  .ai   .message-inner { background: var(--ai-msg); color: var(--text); border: 1px solid var(--border); }
+  .ai   .message-inner.markdown { white-space: normal; }
+  .ai   .message-inner code {
+    background: var(--surface); padding: 2px 5px; border-radius: 3px;
+    font-family: var(--mono); font-size: 12px;
+  }
+  .ai   .message-inner pre {
+    background: var(--surface); padding: 10px 14px; border-radius: var(--radius);
+    overflow-x: auto; margin: 8px 0; font-family: var(--mono); font-size: 12px;
+  }
+  .ai   .message-inner ul { padding-left: 20px; margin: 6px 0; }
+  .ai   .message-inner li { margin-bottom: 3px; }
+  .message-role { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; color: var(--muted); }
+  .user .message-role { color: var(--accent); }
+
+  #empty-state {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 100%; color: var(--muted); text-align: center; padding: 40px;
+  }
+  #empty-state h2 { font-size: 20px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+  #empty-state p  { font-size: 14px; line-height: 1.7; max-width: 360px; }
+
+  /* ── Report panel ────────────────────────────────────────────────────── */
+  #report-panel {
+    display: none; background: var(--surface); border-top: 1px solid var(--border);
+    flex-shrink: 0; min-height: 36px; height: 240px; position: relative;
+  }
+  #report-panel.visible { display: flex; flex-direction: column; }
+  #report-panel.collapsed { height: 36px !important; }
+  #report-resize-handle {
+    position: absolute; top: 0; left: 0; right: 0; height: 5px;
+    cursor: ns-resize; background: transparent; transition: background 0.15s; z-index: 10;
+  }
+  #report-resize-handle:hover { background: var(--accent); opacity: 0.4; }
+  #report-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 16px; height: 36px; flex-shrink: 0;
+    border-bottom: 1px solid var(--border); cursor: pointer; user-select: none;
+  }
+  #report-header:hover { background: rgba(255,255,255,0.02); }
+  #report-header-left { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--muted); }
+  #report-toggle-icon { font-size: 10px; color: var(--muted); transition: transform 0.2s; }
+  #report-panel.collapsed #report-toggle-icon { transform: rotate(-90deg); }
+  #copy-report-btn {
+    font-size: 12px; padding: 3px 10px; background: var(--surface);
+    border: 1px solid var(--border); color: var(--muted); border-radius: 4px; cursor: pointer;
+  }
+  #copy-report-btn:hover { color: var(--text); }
+  #report-body { flex: 1; overflow-y: auto; padding: 12px 16px; }
+  #report-body::-webkit-scrollbar { width: 4px; }
+  #report-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  #report-panel.collapsed #report-body { display: none; }
+  #report-panel pre { font-family: var(--mono); font-size: 12px; color: var(--text); white-space: pre-wrap; }
+
+  /* ── Progress ────────────────────────────────────────────────────────── */
+  #progress-bar {
+    display: none; padding: 10px 16px; background: var(--accent-dim);
+    border-top: 1px solid var(--accent); font-size: 13px; color: var(--accent); flex-shrink: 0;
+  }
+  #progress-bar.visible { display: block; }
+
+  /* ── Input area ──────────────────────────────────────────────────────── */
+  #input-area { padding: 12px 16px; background: var(--sidebar); border-top: 1px solid var(--border); flex-shrink: 0; }
+  #input-row { display: flex; gap: 8px; align-items: flex-end; max-width: 760px; margin: 0 auto; }
+  #msg-input {
+    flex: 1; background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); font-size: 14px; font-family: var(--font);
+    padding: 10px 14px; border-radius: var(--radius); resize: none;
+    min-height: 42px; max-height: 160px; outline: none; line-height: 1.5; transition: border-color 0.15s;
+  }
+  #msg-input:focus { border-color: var(--accent); }
+  #msg-input::placeholder { color: var(--muted); }
+  #msg-input:disabled { opacity: 0.5; }
+  #send-btn {
+    background: var(--accent); border: none; color: #fff; font-size: 14px;
+    font-weight: 600; padding: 10px 18px; border-radius: var(--radius);
+    cursor: pointer; transition: opacity 0.15s; white-space: nowrap; flex-shrink: 0;
+  }
+  #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  #send-btn:not(:disabled):hover { opacity: 0.85; }
+
+  /* ── No session ──────────────────────────────────────────────────────── */
+  #no-session {
+    display: none; flex: 1; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: var(--muted); text-align: center; padding: 40px;
+  }
+  #no-session.visible { display: flex; }
+  #no-session h2 { font-size: 18px; font-weight: 600; color: var(--text); margin-bottom: 10px; }
+  #no-session p  { font-size: 14px; margin-bottom: 20px; line-height: 1.6; }
+  #no-session button {
+    background: var(--accent); border: none; color: #fff;
+    font-size: 14px; font-weight: 600; padding: 10px 24px;
+    border-radius: var(--radius); cursor: pointer;
+  }
+
+  /* ── Dots animation ──────────────────────────────────────────────────── */
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+  .dots::after { content: '...'; animation: blink 1.2s infinite; display: inline-block; }
+
+  /* ── Responsive ──────────────────────────────────────────────────────── */
+  @media (max-width: 680px) {
+    #sidebar {
+      position: fixed; top: 0; left: 0; height: 100vh;
+      transform: translateX(calc(-1 * var(--sidebar-w))); transition: transform 0.25s ease;
+    }
+    #sidebar.mobile-open { transform: translateX(0); }
+    #sidebar.collapsed   { transform: translateX(calc(-1 * var(--sidebar-w))); }
+    .message { padding: 0 12px; }
+    #upload-btn span { display: none; }
+    #mode-badge { display: none !important; }
+    #report-panel { height: 180px; }
+  }
+
+    /* Typing indicator — three bouncing dots shown while LLM streams */
+  .typing-indicator {
+    display: inline-flex; align-items: center; gap: 4px; padding: 4px 0;
+  }
+  .typing-indicator span {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted); display: inline-block;
+    animation: typing-bounce 1.2s infinite ease-in-out;
+  }
+  .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+  .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes typing-bounce {
+    0%, 80%, 100% { transform: scale(0.7); opacity: 0.4; }
+    40%           { transform: scale(1.0); opacity: 1; }
+  }
+</style>
+</head>
+<body>
+
+<div id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+<!-- ── Sidebar ─────────────────────────────────────────────────────────────── -->
+<div id="sidebar">
+  <div id="sidebar-header">
+    <h1>⚡ OpsIQ</h1>
+    <button id="new-session-btn" onclick="newSession()"><span>＋</span> New session</button>
+  </div>
+  <div id="sessions-list">
+    <div class="sessions-empty">No sessions yet.<br>Start one above.</div>
+  </div>
+  <div id="sidebar-footer">
+    <div class="avatar" id="user-avatar">?</div>
+    <span id="user-email">Loading...</span>
+    <button id="logout-btn" onclick="doLogout()">Sign out</button>
+  </div>
+</div>
+
+<!-- ── Main ───────────────────────────────────────────────────────────────── -->
+<div id="main">
+
+  <div id="topbar">
+    <button id="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">☰</button>
+    <span id="session-title" style="color:var(--muted)">Select or create a session</span>
+    <span id="mode-badge" class="mode-chat" style="display:none">Chat</span>
+    <button id="upload-btn" onclick="document.getElementById('file-input').click()" style="display:none">
+      📎 <span>Upload file</span>
+    </button>
+    <input id="file-input" type="file" onchange="handleFileUpload(this)"/>
+  </div>
+
+  <div id="no-session" class="visible">
+    <h2>Welcome to OpsIQ</h2>
+    <p>Create a new session to start chatting, upload documents for RAG analysis, or run a postmortem on a log file.</p>
+    <button onclick="newSession()">＋ Start new session</button>
+  </div>
+
+  <div id="chat-content" style="display:none; flex:1; flex-direction:column; overflow:hidden;">
+    <div id="chat-area">
+      <!-- Load more button sits at the very top of the message list -->
+      <div id="load-more-wrap">
+        <button id="load-more-btn" onclick="loadMoreMessages()">↑ Load older messages</button>
+      </div>
+      <div id="empty-state">
+        <h2>New session</h2>
+        <p>Send a message to start chatting, or upload a document (PDF, DOCX, TXT) or log file to get started.</p>
+      </div>
+    </div>
+
+    <div id="progress-bar">⏳ Processing...</div>
+
+    <div id="report-panel">
+      <div id="report-resize-handle"></div>
+      <div id="report-header" onclick="toggleReport()">
+        <div id="report-header-left">
+          <span id="report-toggle-icon">▼</span>
+          <span>📋 POSTMORTEM REPORT</span>
+        </div>
+        <div>
+          <button id="copy-report-btn" onclick="event.stopPropagation(); copyReport()">Copy</button>
+        </div>
+      </div>
+      <div id="report-body"><pre id="report-content"></pre></div>
+    </div>
+
+    <div id="input-area">
+      <div id="input-row">
+        <textarea id="msg-input" rows="1" placeholder="Message OpsIQ..."
+          onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+        <button id="send-btn" onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Delete modal ───────────────────────────────────────────────────────── -->
+<div id="delete-modal" style="
+  display:none; position:fixed; inset:0; z-index:1000;
+  background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);
+  align-items:center; justify-content:center;">
+  <div style="background:#1e2535; border:1px solid #2a3147; border-radius:12px; padding:24px 28px; max-width:360px; width:90%; margin:0 16px;">
+    <div style="font-size:15px; font-weight:600; color:#e2e8f0; margin-bottom:8px;">Delete session?</div>
+    <div style="font-size:13px; color:#64748b; margin-bottom:24px; line-height:1.6;">
+      This will permanently delete the session, all messages, and any uploaded documents. This cannot be undone.
+    </div>
+    <div style="display:flex; gap:10px; justify-content:flex-end;">
+      <button onclick="closeDeleteModal()" style="padding:8px 18px; border-radius:8px; border:1px solid #2a3147; background:transparent; color:#e2e8f0; font-size:13px; cursor:pointer;">Cancel</button>
+      <button onclick="confirmDelete()"  style="padding:8px 18px; border-radius:8px; border:none; background:#ef4444; color:#fff; font-size:13px; font-weight:600; cursor:pointer;">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let activeToken        = null;
+let isStreaming        = false;
+let reportText         = "";
+let allSessions        = [];
+let acceptedExtensions = new Set([".pdf", ".docx", ".doc", ".txt", ".log"]);
+let maxUploadSizeMB    = 50;
+let currentMode        = "chat";
+let sidebarCollapsed   = false;
+let oldestMessageId    = null;   // pagination cursor for load more
+let hasMoreMessages    = false;  // whether older messages exist in DB
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+window.addEventListener("DOMContentLoaded", async () => {
+  await loadUserInfo();
+  await loadAcceptedExtensions();
+  await loadSessions();
+  initReportResize();
+  if (window.innerWidth <= 680) sidebarCollapsed = true;
+
+  // Restore last active session after page refresh
+  const saved = localStorage.getItem("opsiq_active_token");
+  if (saved && allSessions.find(s => s.token === saved)) {
+    await switchSession(saved);
+  }
+});
+
+async function loadAcceptedExtensions() {
+  try {
+    const res  = await fetch("/upload/extensions");
+    const data = await res.json();
+    document.getElementById("file-input").setAttribute("accept", data.accept);
+    acceptedExtensions = new Set(data.extensions);
+    if (data.max_size_mb) maxUploadSizeMB = data.max_size_mb;
+  } catch {
+    document.getElementById("file-input").setAttribute("accept", ".pdf,.docx,.doc,.txt,.log");
+  }
+}
+
+async function loadUserInfo() {
+  try {
+    const res = await fetch("/auth/me", { credentials: "include" });
+    if (!res.ok) { window.location.href = "/login"; return; }
+    const data = await res.json();
+    document.getElementById("user-email").textContent  = data.email;
+    document.getElementById("user-avatar").textContent = data.email[0].toUpperCase();
+  } catch { window.location.href = "/login"; }
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+function toggleSidebar() {
+  const sidebar  = document.getElementById("sidebar");
+  const overlay  = document.getElementById("sidebar-overlay");
+  const isMobile = window.innerWidth <= 680;
+  if (isMobile) {
+    const isOpen = sidebar.classList.contains("mobile-open");
+    sidebar.classList.toggle("mobile-open", !isOpen);
+    overlay.classList.toggle("visible", !isOpen);
+  } else {
+    sidebarCollapsed = !sidebarCollapsed;
+    sidebar.classList.toggle("collapsed", sidebarCollapsed);
+  }
+}
+
+function closeSidebar() {
+  document.getElementById("sidebar").classList.remove("mobile-open");
+  document.getElementById("sidebar-overlay").classList.remove("visible");
+}
+
+function maybeCloseSidebarOnMobile() {
+  if (window.innerWidth <= 680) closeSidebar();
+}
+
+// ── Logout ────────────────────────────────────────────────────────────────────
+async function doLogout() {
+  try { await fetch("/auth/logout", { method: "POST", credentials: "include" }); } finally {
+    localStorage.removeItem("opsiq_active_token");
+    window.location.href = "/login";
+  }
+}
+
+// ── Sessions ──────────────────────────────────────────────────────────────────
+async function loadSessions() {
+  try {
+    const res  = await fetch("/sessions", { credentials: "include" });
+    const data = await res.json();
+    allSessions = data.sessions || [];
+    renderSessions();
+  } catch (e) { console.error("Failed to load sessions", e); }
+}
+
+function renderSessions() {
+  const list = document.getElementById("sessions-list");
+  if (!allSessions.length) {
+    list.innerHTML = '<div class="sessions-empty">No sessions yet.<br>Start one above.</div>';
+    return;
+  }
+  list.innerHTML = allSessions.map(s => `
+    <div class="session-item ${s.token === activeToken ? 'active' : ''}"
+         onclick="switchSession('${s.token}')" data-token="${s.token}">
+      <span class="session-icon">${modeIcon(s.mode)}</span>
+      <div class="session-info">
+        <div class="session-name">${escHtml(s.name)}</div>
+        <div class="session-meta">${s.mode} · ${timeAgo(s.last_accessed_at)}</div>
+      </div>
+      <button class="session-delete" onclick="deleteSession(event,'${s.token}')" title="Delete">✕</button>
+    </div>
+  `).join("");
+}
+
+function modeIcon(mode) {
+  return mode === "rag" ? "📄" : mode === "postmortem" ? "🔍" : "💬";
+}
+
+async function newSession() {
+  const res  = await fetch("/session", { method: "POST", credentials: "include" });
+  const data = await res.json();
+  await loadSessions();
+  await switchSession(data.token);
+}
+
+async function switchSession(token) {
+  activeToken = token;
+  localStorage.setItem("opsiq_active_token", token);
+  maybeCloseSidebarOnMobile();
+
+  document.querySelectorAll(".session-item").forEach(el => {
+    el.classList.toggle("active", el.dataset.token === token);
+  });
+
+  document.getElementById("no-session").classList.remove("visible");
+  document.getElementById("chat-content").style.display = "flex";
+  document.getElementById("report-panel").classList.remove("visible");
+  document.getElementById("progress-bar").classList.remove("visible");
+
+  // Reset chat area — keep load-more-wrap, clear rest
+  document.getElementById("chat-area").innerHTML = `
+    <div id="load-more-wrap">
+      <button id="load-more-btn" onclick="loadMoreMessages()">↑ Load older messages</button>
+    </div>
+    <div id="empty-state"><h2>Loading session...</h2></div>
+  `;
+
+  const headers  = sessionHeader();
+  const modeRes  = await fetch("/session/mode", { headers, credentials: "include" });
+  const modeData = await modeRes.json();
+  currentMode    = modeData.mode;
+  updateModeBadge(modeData.mode);
+
+  const s = allSessions.find(s => s.token === token);
+  document.getElementById("session-title").textContent = s ? s.name : "Session";
+  document.getElementById("upload-btn").style.display  = "flex";
+  document.getElementById("mode-badge").style.display  = "inline-block";
+
+  // Load report if postmortem
+  try {
+    const memRes  = await fetch("/session/memory", { headers, credentials: "include" });
+    const memData = await memRes.json();
+    if (memData.report) {
+      reportText = memData.report;
+      document.getElementById("report-content").textContent = reportText;
+      const panel = document.getElementById("report-panel");
+      panel.classList.add("visible");
+      panel.classList.remove("collapsed");
+    }
+  } catch {}
+
+  // Load initial messages via paginated endpoint
+  await loadInitialMessages();
+}
+
+// ── Message pagination ────────────────────────────────────────────────────────
+async function loadInitialMessages() {
+  oldestMessageId = null;
+  hasMoreMessages = false;
+
+  try {
+    const res  = await fetch("/session/messages", {
+      headers    : { "x-session-token": activeToken },
+      credentials: "include",
+    });
+    const data = await res.json();
+
+    removeEmptyState();
+
+    if (data.messages && data.messages.length) {
+      for (const m of data.messages) {
+        appendMessage(m.role === "human" ? "user" : "ai", m.content, m.id);
+      }
+      oldestMessageId = data.oldest_id;
+      hasMoreMessages = data.has_more;
+      scrollToBottom();
+    } else {
+      const area = document.getElementById("chat-area");
+      area.insertAdjacentHTML("beforeend",
+        '<div id="empty-state"><h2>Session loaded</h2><p>Continue your conversation or upload a file.</p></div>'
+      );
+    }
+  } catch {
+    const area = document.getElementById("chat-area");
+    area.insertAdjacentHTML("beforeend",
+      '<div id="empty-state"><h2>Session loaded</h2><p>Continue your conversation or upload a file.</p></div>'
+    );
+  }
+
+  updateLoadMoreBtn();
+}
+
+async function loadMoreMessages() {
+  if (!activeToken || !hasMoreMessages || !oldestMessageId) return;
+
+  const btn = document.getElementById("load-more-btn");
+  btn.textContent = "Loading...";
+  btn.disabled    = true;
+
+  try {
+    const res  = await fetch(
+      `/session/messages?before=${oldestMessageId}&limit=20`,
+      { headers: { "x-session-token": activeToken }, credentials: "include" }
+    );
+    const data = await res.json();
+
+    if (data.messages && data.messages.length) {
+      const area         = document.getElementById("chat-area");
+      const wrap         = document.getElementById("load-more-wrap");
+      const scrollBefore = area.scrollHeight - area.scrollTop;
+
+      // Prepend older messages right after the load-more-wrap
+      for (const m of data.messages) {
+        const div = buildMessageEl(m.role === "human" ? "user" : "ai", m.content, m.id);
+        wrap.insertAdjacentElement("afterend", div);
+      }
+
+      // Restore scroll so user stays in place
+      area.scrollTop = area.scrollHeight - scrollBefore;
+
+      oldestMessageId = data.oldest_id;
+      hasMoreMessages = data.has_more;
+    }
+  } catch (e) {
+    console.error("Failed to load more messages", e);
+  } finally {
+    updateLoadMoreBtn();
+  }
+}
+
+function updateLoadMoreBtn() {
+  const btn = document.getElementById("load-more-btn");
+  if (!btn) return;
+  btn.disabled    = false;
+  btn.textContent = "↑ Load older messages";
+  btn.classList.toggle("visible", hasMoreMessages);
+}
+
+// ── Delete modal ──────────────────────────────────────────────────────────────
+let _pendingDeleteToken = null;
+
+function deleteSession(e, token) {
+  e.stopPropagation();
+  _pendingDeleteToken = token;
+  document.getElementById("delete-modal").style.display = "flex";
+}
+function closeDeleteModal() {
+  document.getElementById("delete-modal").style.display = "none";
+  _pendingDeleteToken = null;
+}
+async function confirmDelete() {
+  const token = _pendingDeleteToken;
+  closeDeleteModal();
+  if (!token) return;
+
+  await fetch("/session", { method: "DELETE", headers: { "x-session-token": token }, credentials: "include" });
+
+  if (activeToken === token) {
+    activeToken = null;
+    localStorage.removeItem("opsiq_active_token");
+    document.getElementById("no-session").classList.add("visible");
+    document.getElementById("chat-content").style.display = "none";
+    document.getElementById("upload-btn").style.display   = "none";
+    document.getElementById("mode-badge").style.display   = "none";
+    document.getElementById("session-title").textContent  = "Select or create a session";
+    document.getElementById("session-title").style.color  = "var(--muted)";
+  }
+  await loadSessions();
+}
+document.getElementById("delete-modal").addEventListener("click", function(e) {
+  if (e.target === this) closeDeleteModal();
+});
+
+// ── Report panel ──────────────────────────────────────────────────────────────
+function toggleReport() {
+  document.getElementById("report-panel").classList.toggle("collapsed");
+}
+function initReportResize() {
+  const handle = document.getElementById("report-resize-handle");
+  const panel  = document.getElementById("report-panel");
+  let startY, startH;
+  handle.addEventListener("mousedown", e => {
+    e.preventDefault(); startY = e.clientY; startH = panel.offsetHeight;
+    function onMove(e) {
+      const newH = Math.max(36, Math.min(startH + (startY - e.clientY), window.innerHeight * 0.7));
+      panel.style.height = newH + "px";
+      if (newH > 36) panel.classList.remove("collapsed");
+    }
+    function onUp() { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  });
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+function sessionHeader() {
+  return { "x-session-token": activeToken, "Content-Type": "application/json" };
+}
+function handleKey(e) {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+function autoResize(el) {
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 160) + "px";
+}
+
+async function sendMessage() {
+  if (!activeToken || isStreaming) return;
+  const input = document.getElementById("msg-input");
+  const msg   = input.value.trim();
+  if (!msg) return;
+
+  input.value = ""; input.style.height = "auto";
+  removeEmptyState();
+  appendMessage("user", msg);
+
+  isStreaming = true;
+  document.getElementById("send-btn").disabled = true;
+
+  // Show typing indicator while waiting
+  const aiEl    = appendMessage("ai", "");
+  const innerEl = aiEl.querySelector(".message-inner");
+  innerEl.innerHTML = '<span class="typing-indicator"><span></span><span></span><span></span></span>';
+
+  try {
+    const res = await fetch("/chat", {
+      method: "POST", headers: sessionHeader(), credentials: "include",
+      body: JSON.stringify({ message: msg }),
+    });
+    const reader = res.body.getReader();
+    const dec    = new TextDecoder();
+    let   buf    = "";
+
+    // Consume the stream but don't render tokens
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        if (line.slice(6) === "[DONE]") break;
+      }
+    }
+
+    // Stream done — fetch the latest message from DB which has clean content
+    const res2 = await fetch(
+      `/session/messages?limit=1`,
+      { headers: { "x-session-token": activeToken }, credentials: "include" }
+    );
+    const data = await res2.json();
+    const last = data.messages?.[data.messages.length - 1];
+
+    if (last && last.role === "ai") {
+      innerEl.classList.add("markdown");
+      innerEl.innerHTML = renderMarkdown(last.content);
+    } else {
+      innerEl.textContent = "No response received.";
+    }
+    scrollToBottom();
+
+  } catch (e) {
+    innerEl.textContent = "Error: " + e.message;
+  }
+
+  isStreaming = false;
+  document.getElementById("send-btn").disabled = false;
+  await loadSessions();
+  renderSessions();
+}
+// ── Upload ────────────────────────────────────────────────────────────────────
+function validateFile(file) {
+  const ext    = "." + file.name.split(".").pop().toLowerCase();
+  const sizeMB = file.size / (1024 * 1024);
+  if (!acceptedExtensions.has(ext))
+    return { ok: false, message: `Unsupported file type "${ext}". Supported: ${[...acceptedExtensions].join(", ")}` };
+  if (sizeMB > maxUploadSizeMB)
+    return { ok: false, message: `File too large (${sizeMB.toFixed(1)}MB). Maximum is ${maxUploadSizeMB}MB.` };
+  if (currentMode === "postmortem" && ext !== ".log")
+    return { ok: false, message: "Session is locked to postmortem. Open a new session to upload documents." };
+  return { ok: true };
+}
+
+async function handleFileUpload(input) {
+  if (!activeToken || !input.files.length) return;
+  const file = input.files[0];
+  input.value = "";
+
+  const validation = validateFile(file);
+  if (!validation.ok) { appendMessage("ai", `⚠️ ${validation.message}`); return; }
+
+  const isLog    = file.name.toLowerCase().endsWith(".log");
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const sendBtn  = document.getElementById("send-btn");
+  const msgInput = document.getElementById("msg-input");
+  sendBtn.disabled  = true;
+  sendBtn.innerHTML = 'Uploading<span class="dots"></span>';
+  msgInput.disabled = true;
+
+  if (isLog) {
+    document.getElementById("progress-bar").textContent = `⏳ Processing ${file.name}...`;
+    document.getElementById("progress-bar").classList.add("visible");
+  }
+
+  try {
+    const res = await fetch("/upload", {
+      method: "POST", headers: { "x-session-token": activeToken },
+      credentials: "include", body: formData,
+    });
+
+    if (isLog) {
+      const reader = res.body.getReader();
+      const dec    = new TextDecoder();
+      let   buf    = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split("\n"); buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6);
+          if (raw === "[DONE]") break;
+          try {
+            const evt = JSON.parse(raw);
+            if (evt.event === "progress") {
+              document.getElementById("progress-bar").textContent = `⏳ ${evt.text}`;
+            } else if (evt.event === "report") {
+              reportText = evt.text;
+              document.getElementById("report-content").textContent = reportText;
+              const panel = document.getElementById("report-panel");
+              panel.classList.add("visible"); panel.classList.remove("collapsed");
+            } else if (evt.event === "error") {
+              document.getElementById("progress-bar").classList.remove("visible");
+              appendMessage("ai", `⚠️ ${evt.text}`);
+            }
+          } catch {}
+        }
+      }
+      document.getElementById("progress-bar").classList.remove("visible");
+    } else {
+      const data = await res.json();
+      if (data.status === "duplicate") appendMessage("ai", `ℹ️ ${data.message}`);
+      else if (data.status === "ok")   appendMessage("ai", `✅ ${data.message}`);
+      else                             appendMessage("ai", `⚠️ ${data.message}`);
+    }
+
+    const modeRes  = await fetch("/session/mode", { headers: { "x-session-token": activeToken }, credentials: "include" });
+    const modeData = await modeRes.json();
+    currentMode    = modeData.mode;
+    updateModeBadge(modeData.mode);
+    await loadSessions(); renderSessions();
+
+  } catch (e) {
+    document.getElementById("progress-bar").classList.remove("visible");
+    appendMessage("ai", "Upload failed: " + e.message);
+  } finally {
+    sendBtn.disabled  = false;
+    sendBtn.innerHTML = "Send";
+    msgInput.disabled = false;
+  }
+}
+
+// ── Markdown renderer ─────────────────────────────────────────────────────────
+function renderMarkdown(text) {
+  let html = escHtml(text);
+  // code blocks
+  html = html.replace(/```[\w]*\n?([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
+  // inline code
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // bold
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // italic
+  html = html.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+  // bullet points
+  html = html.replace(/^[*\-] (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/(<li>[\s\S]*?<\/li>)+/g, '<ul>$&</ul>');
+  // line breaks (skip inside pre blocks)
+  html = html.replace(/(?!<\/?(pre|code|ul|li)[^>]*>)\n/g, '<br/>');
+  return html;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function buildMessageEl(role, text, id = null) {
+  const div = document.createElement("div");
+  div.className = `message ${role}`;
+  if (id) div.dataset.msgId = id;
+  const isAi = role === "ai";
+  div.innerHTML = `
+    <div class="message-role">${role === "user" ? "You" : "OpsIQ"}</div>
+    <div class="message-inner${isAi ? ' markdown' : ''}">${isAi ? renderMarkdown(text) : escHtml(text)}</div>
+  `;
+  return div;
+}
+
+function appendMessage(role, text, id = null) {
+  removeEmptyState();
+  const area = document.getElementById("chat-area");
+  const div  = buildMessageEl(role, text, id);
+  area.appendChild(div);
+  scrollToBottom();
+  return div;
+}
+
+function removeEmptyState() {
+  const es = document.getElementById("empty-state");
+  if (es) es.remove();
+}
+function scrollToBottom() {
+  const area = document.getElementById("chat-area");
+  area.scrollTop = area.scrollHeight;
+}
+function updateModeBadge(mode) {
+  const badge = document.getElementById("mode-badge");
+  badge.className = `mode-badge mode-${mode}`;
+  badge.textContent = mode === "postmortem" ? "Postmortem" : mode === "rag" ? "RAG" : "Chat";
+}
+function copyReport() {
+  navigator.clipboard.writeText(reportText);
+  const btn = document.getElementById("copy-report-btn");
+  btn.textContent = "Copied!";
+  setTimeout(() => btn.textContent = "Copy", 1500);
+}
+function timeAgo(iso) {
+  const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (diff < 60)    return "just now";
+  if (diff < 3600)  return `${Math.floor(diff/60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+  return `${Math.floor(diff/86400)}d ago`;
+}
+function escHtml(str) {
+  return str.replace(/&/g,"&amp;").replace(/</g,"&lt;")
+            .replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
+}
+</script>
+</body>
+</html>
