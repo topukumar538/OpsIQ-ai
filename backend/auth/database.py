@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 _is_postgres = DATABASE_URL.startswith("postgresql")
 
-_connect_args = {"ssl": True}
+_connect_args: dict = {"ssl": True}
 if _is_postgres and DB_SCHEMA:
     _connect_args["server_settings"] = {"search_path": DB_SCHEMA}
 
