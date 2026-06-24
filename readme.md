@@ -4,6 +4,7 @@ A full-stack AI-powered operations assistant built with FastAPI and LangGraph. F
 
 Built as a portfolio project to demonstrate backend engineering, AI integration, and production-readiness skills.
 
+🔗 **[Live Demo](https://huggingface.co/spaces/topukumar/OpsIQ)**
 ---
 
 ## Tech Stack
