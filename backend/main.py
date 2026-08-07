@@ -388,23 +388,51 @@ async def upload(
     if state.get("is_locked"):
         return {"status": "locked", "message": "Session locked to current postmortem. Open a new session."}
 
+    from config import MAX_UPLOAD_SIZE_MB
+
     fname     = file.filename or "upload"
     suffix    = Path(fname).suffix.lower()
     tmp_path  = Path(f"/tmp/{uuid.uuid4()}{suffix}")
-    raw_bytes = await file.read()
-
-    # Server-side size guard — second line of defence after client-side check.
-    # Client check is UX (instant feedback); this check is security
-    # (client validation can always be bypassed with curl/Postman etc.).
-    from config import MAX_UPLOAD_SIZE_MB
     max_bytes = MAX_UPLOAD_SIZE_MB * 1024 * 1024
-    if len(raw_bytes) > max_bytes:
+
+    # Cheap pre-check from the multipart headers. A crafted request can lie
+    # about this, so it's an optimisation rather than the real guard — but it
+    # rejects the obvious cases without reading a byte of the body.
+    if file.size is not None and file.size > max_bytes:
         return {
             "status" : "error",
-            "message": f"File too large ({len(raw_bytes) // (1024*1024)}MB). Maximum is {MAX_UPLOAD_SIZE_MB}MB.",
+            "message": f"File too large ({file.size // (1024*1024)}MB). Maximum is {MAX_UPLOAD_SIZE_MB}MB.",
         }
 
-    tmp_path.write_bytes(raw_bytes)
+    # Stream to disk 1MB at a time, aborting as soon as the running total
+    # crosses the limit. The previous version did `await file.read()` — the
+    # entire body into RAM — and only checked the size afterwards, so the
+    # guard could never prevent the OOM it existed to prevent.
+    written = 0
+    try:
+        with tmp_path.open("wb") as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > max_bytes:
+                    raise ValueError("too_large")
+                out.write(chunk)
+    except ValueError:
+        tmp_path.unlink(missing_ok=True)
+        return {
+            "status" : "error",
+            "message": f"File too large. Maximum is {MAX_UPLOAD_SIZE_MB}MB.",
+        }
+    except Exception as e:
+        tmp_path.unlink(missing_ok=True)
+        logger.exception("Failed to save upload file=%s token=%s", fname, token)
+        return {"status": "error", "message": f"Could not read file: {e}"}
+
+    if written == 0:
+        tmp_path.unlink(missing_ok=True)
+        return {"status": "error", "message": "File is empty."}
 
     # classify_input() only ever sees real temp file paths here — never raw
     # user message strings. Messages go through /chat; files go through /upload.

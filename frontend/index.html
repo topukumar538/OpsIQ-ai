@@ -839,7 +839,10 @@ async function sendMessage() {
 }
 // ── Upload ────────────────────────────────────────────────────────────────────
 function validateFile(file) {
-  const ext    = "." + file.name.split(".").pop().toLowerCase();
+  // A dotless filename like "README" used to become ".readme" — split(".")
+  // returns the whole name when there's no dot at all.
+  const dot    = file.name.lastIndexOf(".");
+  const ext    = dot > 0 ? file.name.slice(dot).toLowerCase() : "";
   const sizeMB = file.size / (1024 * 1024);
   if (!acceptedExtensions.has(ext))
     return { ok: false, message: `Unsupported file type "${ext}". Supported: ${[...acceptedExtensions].join(", ")}` };

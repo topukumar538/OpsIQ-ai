@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, Text, Boolean, ForeignKey, MetaData, func
+from sqlalchemy import String, DateTime, Text, Boolean, ForeignKey, MetaData, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from config import DATABASE_URL, DB_SCHEMA
@@ -55,6 +55,10 @@ class Session(Base):
 
 class SessionFile(Base):
     __tablename__ = "session_files"
+
+    __table_args__ = (
+        UniqueConstraint("session_id", "file_hash", name="uq_session_file_hash"),
+    )
 
     id        : Mapped[int]      = mapped_column(primary_key=True, autoincrement=True)
     # CASCADE: deleting a session automatically deletes all its files
