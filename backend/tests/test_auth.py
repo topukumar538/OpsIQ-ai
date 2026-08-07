@@ -6,9 +6,9 @@ from httpx import AsyncClient, ASGITransport
 
 os.environ["SECRET_KEY"]   = "a" * 32
 os.environ["GROQ_API_KEY"] = "test-key-not-real"
-os.environ["DATABASE_URL"] = os.getenv(
+os.environ["DATABASE_URL"] = os.environ.get(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://myuser:mypassword@localhost:5432/opsiq"
+    "postgresql+asyncpg://opsiq:opsiq_dev_password@localhost:5432/opsiq_test",
 )
 os.environ["DB_SCHEMA"] = "opsiq_test"
 

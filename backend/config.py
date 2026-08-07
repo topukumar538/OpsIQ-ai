@@ -24,6 +24,8 @@ _SECRET_KEY_PLACEHOLDERS = {
 _MIN_SECRET_KEY_LENGTH = 32
 
 
+database_url: str = "postgresql+asyncpg://myuser:mypassword@localhost:5432/opsiq"
+
 class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
