@@ -32,7 +32,7 @@ from session import (
     delete_session,
     get_session,
     list_sessions,
-    run_graph_async,
+    run_postmortem_async,
     save_report_to_db,
     start_cleanup_task,
     touch_session,
@@ -283,9 +283,9 @@ async def chat(
     async def _stream() -> AsyncGenerator[str, None]:
         from core.memory import get_history, save_turn
         from core.retriever import retrieve
-        from graph.nodes.chat import prompt as chat_prompt
-        from graph.nodes.rag import prompt as rag_prompt
-        from graph.nodes.postmortem import prompt as pm_prompt
+        from prompts import CHAT_PROMPT as chat_prompt
+        from prompts import RAG_PROMPT as rag_prompt
+        from prompts import PM_PROMPT as pm_prompt
 
         async with session["lock"]:
             state  = session["state"]
@@ -469,7 +469,7 @@ async def upload(
 
                 try:
                     async with session["lock"]:
-                        result = await run_graph_async(token, uid, file_path=str(tmp_path))
+                        result = await run_postmortem_async(token, uid, str(tmp_path))
                 finally:
                     # Always clean up the temp file whether the pipeline
                     # succeeded or failed — never leave files in /tmp.

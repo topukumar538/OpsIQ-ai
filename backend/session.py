@@ -28,7 +28,7 @@ from auth.models import Session as SessionModel
 from core.llm import get_llm, get_rag_llm, get_pm_llm
 from core.faiss_store import load_store, delete_store
 from core.memory import restore_memory_from_db, make_memory
-from graph.builder import build_graph, make_initial_state
+from graph.state import make_initial_state
 from config import SESSION_TTL_SECONDS, SESSION_CLEANUP_INTERVAL_SECONDS
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,6 @@ def _make_in_memory_session(
         "db_id"        : db_id,
         "user_id"      : user_id,
         "token"        : token,
-        "graph"        : build_graph(),
         "state"        : state,
         "chat_llm"     : chat_llm,
         "rag_llm"      : rag_llm,
@@ -284,44 +283,67 @@ async def touch_session(token: str, user_id: int, db: AsyncSession) -> None:
 
 
 # ── Graph runner ──────────────────────────────────────────────────────────────
+# ── Postmortem runner ─────────────────────────────────────────────────────────
 
-def _run_graph(token: str, user_id: int, user_input: str = "", file_path: str = "") -> dict:
+def _run_postmortem_sync(token: str, user_id: int, file_path: str) -> dict:
     """
-    Synchronous graph runner — called via run_in_executor from run_graph_async.
-    Uses the cached session — must be loaded before calling this.
+    Run the postmortem pipeline for a session. Called via run_in_executor.
+    The session must already be in the cache.
+
+    Replaces the old _run_graph(). run_graph_async was called from exactly one
+    place, always with file_path set, so the top-level graph's routing existed
+    to make a single call to postmortem_node. The parallel subgraph inside
+    run_postmortem() is unchanged — that's the part doing real work.
     """
+    from pathlib import Path
+    from postmortem.builder import run_postmortem
+    from graph.state import POSTMORTEM
+
     session = _sessions.get(token)
     if not session or session["user_id"] != user_id:
         raise ValueError(f"Session {token} not in cache — call get_session first")
 
-    # Touch last_accessed so the cleanup task doesn't evict a session
-    # mid-run during a long postmortem pipeline.
+    # Touch last_accessed so the cleanup task can't evict this session
+    # mid-run during a long pipeline.
     session["last_accessed"] = time.time()
 
     state = session["state"]
-    state["user_input"]    = user_input
-    state["file_path"]     = file_path
-    state["user_id"]       = user_id
-    state["session_token"] = token
 
-    result = session["graph"].invoke(state)
-    session["state"] = result
-    return result
+    # Take pm_llm from the session dict, where it actually exists.
+    # postmortem_node used `state.get("pm_llm") or state["llm"]`, but state
+    # never had a pm_llm key — so it silently fell back to chat_llm and the
+    # entire pipeline ran at temperature 0.7 instead of the configured 0.1.
+    pm_llm = session["pm_llm"]
 
-
-async def run_graph_async(
-    token     : str,
-    user_id   : int,
-    user_input: str = "",
-    file_path : str = "",
-) -> dict:
-    """Async wrapper — moves blocking LangGraph pipeline off the event loop."""
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        None, _run_graph, token, user_id, user_input, file_path,
+    pm_state = run_postmortem(
+        log_path      = file_path,
+        log_filename  = Path(file_path).name,
+        llm           = pm_llm,
+        user_id       = user_id,
+        session_token = token,
     )
 
+    state["pm_store"]   = pm_state["pm_store"]
+    state["report_str"] = pm_state["report_str"]
+    state["mode"]       = POSTMORTEM
+    state["is_locked"]  = True
 
+    if state.get("pm_memory") is None:
+        pm_memory = make_memory(pm_llm)
+        summary   = pm_state.get("report_summary", "")
+        if summary:
+            pm_memory.moving_summary_buffer = summary
+        state["pm_memory"] = pm_memory
+
+    return state
+
+
+async def run_postmortem_async(token: str, user_id: int, file_path: str) -> dict:
+    """Async wrapper — keeps the blocking pipeline off the event loop."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None, _run_postmortem_sync, token, user_id, file_path,
+    )
 # ── TTL cleanup ───────────────────────────────────────────────────────────────
 
 def cleanup_expired_sessions() -> int:

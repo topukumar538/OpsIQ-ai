@@ -1,6 +1,7 @@
 # Location: backend/graph/state.py
 from typing import Optional, Any
 from typing_extensions import TypedDict
+from core.memory import make_memory
 
 RAG        = "rag"
 POSTMORTEM = "postmortem"
@@ -40,3 +41,27 @@ class OpsState(TypedDict, total=False):
     # ── Postmortem ────────────────────────────────────────────────────────────
     report_str : str
     rag_warning: str  # set when log uploaded in RAG mode
+
+def make_initial_state(llm) -> OpsState:
+    """
+    Blank OpsState for a new session. Memory objects are created lazily
+    except chat_memory, since chat is the default mode.
+
+    Moved here from graph/builder.py, which no longer exists — the top-level
+    graph it built only ever dispatched to a single node.
+    """
+    return OpsState(
+        mode          = "chat",
+        file_path     = "",
+        chat_memory   = make_memory(llm),
+        rag_memory    = None,
+        pm_memory     = None,
+        rag_store     = None,
+        pm_store      = None,
+        report_str    = "",
+        rag_warning   = "",
+        is_locked     = False,
+        llm           = llm,
+        user_id       = 0,
+        session_token = "",
+    )
