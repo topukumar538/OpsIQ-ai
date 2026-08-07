@@ -298,14 +298,14 @@ async def chat(
                 llm = session["chat_llm"]
                 if state.get("chat_memory") is None:
                     state["chat_memory"] = make_memory(llm)
-                memory = state["chat_memory"]
+                memory  = state["chat_memory"]
                 history = get_history(memory)
                 filled  = chat_prompt.format(history=history, input=msg)
             elif mode == RAG:
                 llm = session["rag_llm"]
                 if state.get("rag_memory") is None:
                     state["rag_memory"] = make_memory(llm)
-                memory = state["rag_memory"]
+                memory  = state["rag_memory"]
                 history = get_history(memory)
                 context = retrieve(state["rag_store"], msg, RAG_TOP_K)
                 filled  = rag_prompt.format(history=history, context=context, input=msg)
@@ -313,7 +313,7 @@ async def chat(
                 llm = session["pm_llm"]
                 if state.get("pm_memory") is None:
                     state["pm_memory"] = make_memory(llm)
-                memory = state["pm_memory"]
+                memory  = state["pm_memory"]
                 history = get_history(memory)
                 context = retrieve(state["pm_store"], msg, PM_TOP_K)
                 filled  = pm_prompt.format(
@@ -329,31 +329,47 @@ async def chat(
                 name = msg[:40] + ("..." if len(msg) > 40 else "")
                 await update_session_name(token, uid, name, db)
 
+            full       = ""
+            error_text = None
 
-            full = ""
-            async for chunk in llm.astream(filled):
-                token_text = str(chunk.content)
-                if token_text:
-                    full += token_text
-                    yield f"data: {token_text}\n\n"
+            try:
+                async for chunk in llm.astream(filled):
+                    token_text = str(chunk.content)
+                    if token_text:
+                        full += token_text
+                        # JSON-encoded so newlines survive. A raw
+                        # "data: {text}\n\n" frame breaks apart at every
+                        # blank line in the model's markdown, which is why
+                        # the frontend used to discard the stream entirely.
+                        yield f"data: {json.dumps({'event': 'token', 'text': token_text})}\n\n"
 
-            # Save turn to LangChain memory
-            save_turn(memory, msg, full)
+            except Exception as e:
+                logger.exception("Chat stream failed token=%s mode=%s", token, mode)
+                error_text = f"Response failed: {e}"
 
-            # Persist messages + memory summary to DB
-            await save_message_to_db(db, db_id, "human", msg, mode)
-            await save_message_to_db(db, db_id, "ai", full, mode)
-            await save_memory_to_db(
-                db, db_id,
-                state.get("chat_memory"),
-                state.get("rag_memory"),
-                state.get("pm_memory"),
-            )
+            # Persist whatever we got. Runs on the error path too, so a
+            # partial answer the user already saw isn't lost from history.
+            if full:
+                try:
+                    save_turn(memory, msg, full)
+                    await save_message_to_db(db, db_id, "human", msg, mode)
+                    await save_message_to_db(db, db_id, "ai", full, mode)
+                    await save_memory_to_db(
+                        db, db_id,
+                        state.get("chat_memory"),
+                        state.get("rag_memory"),
+                        state.get("pm_memory"),
+                    )
+                except Exception:
+                    logger.exception("Failed to persist turn token=%s", token)
 
-            yield "data: [DONE]\n\n"
+            if error_text:
+                yield f"data: {json.dumps({'event': 'error', 'text': error_text})}\n\n"
+
+            # Always last. The frontend reader stops on this.
+            yield f"data: {json.dumps({'event': 'done'})}\n\n"
 
     return StreamingResponse(_stream(), media_type="text/event-stream")
-
 
 # ── Upload ────────────────────────────────────────────────────────────────────
 
@@ -418,9 +434,6 @@ async def upload(
 
     # ── Log file → postmortem pipeline ───────────────────────────────────────
     if kind == "log_file":
-        # This is the fixed _run() generator only.
-        # Replace the existing _run() inside the upload() route in main.py.
-        # Everything outside _run() stays the same.
 
         async def _run() -> AsyncGenerator[str, None]:
             try:
@@ -462,8 +475,8 @@ async def upload(
 
             finally:
                 # [DONE] is ALWAYS the last event, success or failure.
-                # The frontend SSE reader depends on this to stop looping.
-                yield "data: [DONE]\n\n"
+
+                yield f"data: {json.dumps({'event': 'done'})}\n\n"
         return StreamingResponse(_run(), media_type="text/event-stream")
 
     # ── RAG file → document ingestion ─────────────────────────────────────────

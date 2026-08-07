@@ -697,6 +697,73 @@ function autoResize(el) {
   el.style.height = Math.min(el.scrollHeight, 160) + "px";
 }
 
+// ── SSE reader ────────────────────────────────────────────────────────────────
+// One reader for both /chat and /upload. Every event is JSON:
+//   {event:"token"|"progress"|"report"|"error"|"done", text?, ...}
+async function readSSE(res, onEvent) {
+  const reader = res.body.getReader();
+  const dec    = new TextDecoder();
+  let   buf    = "";
+  let   ended  = false;
+
+  while (!ended) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      let evt;
+      try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+      if (evt.event === "done") { ended = true; break; }
+      onEvent(evt);
+    }
+  }
+}
+
+
+// ── Typewriter ────────────────────────────────────────────────────────────────
+// Groq streams at 500+ tok/s, so chunks land faster than the eye can track and
+// the answer appears to jump. This buffers incoming text and paints it at a
+// steady, readable rate. Network speed is unchanged — only display pacing.
+function createTypewriter(el, onDone) {
+  let queue    = "";     // text received but not yet painted
+  let shown    = "";     // text currently on screen
+  let timer    = null;
+  let finished = false;
+
+  const CHARS_PER_TICK = 3;    // higher = faster
+  const TICK_MS        = 16;   // ~60fps
+
+  function tick() {
+    if (queue.length) {
+      const take = queue.slice(0, CHARS_PER_TICK);
+      queue = queue.slice(CHARS_PER_TICK);
+      shown += take;
+      el.textContent = shown;
+      scrollToBottom();
+    } else if (finished) {
+      clearInterval(timer);
+      timer = null;
+      onDone(shown);
+    }
+  }
+
+  return {
+    push(text) {
+      queue += text;
+      if (!timer) timer = setInterval(tick, TICK_MS);
+    },
+    finish() {
+      finished = true;
+      // Nothing queued and no timer running — fire immediately.
+      if (!timer) onDone(shown);
+    },
+    text: () => shown + queue,
+  };
+}
+
 async function sendMessage() {
   if (!activeToken || isStreaming) return;
   const input = document.getElementById("msg-input");
@@ -710,45 +777,53 @@ async function sendMessage() {
   isStreaming = true;
   document.getElementById("send-btn").disabled = true;
 
-  // Show typing indicator while waiting
   const aiEl    = appendMessage("ai", "");
   const innerEl = aiEl.querySelector(".message-inner");
   innerEl.innerHTML = '<span class="typing-indicator"><span></span><span></span><span></span></span>';
+
+  let full    = "";
+  let errored = false;
+  let started = false;
 
   try {
     const res = await fetch("/chat", {
       method: "POST", headers: sessionHeader(), credentials: "include",
       body: JSON.stringify({ message: msg }),
     });
-    const reader = res.body.getReader();
-    const dec    = new TextDecoder();
-    let   buf    = "";
 
-    // Consume the stream but don't render tokens
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      const lines = buf.split("\n");
-      buf = lines.pop();
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        if (line.slice(6) === "[DONE]") break;
+    if (res.status === 401) { window.location.href = "/login"; return; }
+
+    // Resolves once the typewriter has painted everything it was given.
+    let resolvePainted;
+    const painted = new Promise(r => { resolvePainted = r; });
+
+    const writer = createTypewriter(innerEl, (finalText) => {
+      full = finalText;
+      resolvePainted();
+    });
+
+    await readSSE(res, (evt) => {
+      if (evt.event === "token") {
+        if (!started) {
+          started = true;
+          innerEl.textContent = "";              // clear the typing dots
+          innerEl.classList.add("streaming");
+        }
+        writer.push(evt.text);
+      } else if (evt.event === "error") {
+        errored = true;
+        appendMessage("ai", `⚠️ ${evt.text}`);
       }
-    }
+    });
 
-    // Stream done — fetch the latest message from DB which has clean content
-    const res2 = await fetch(
-      `/session/messages?limit=1`,
-      { headers: { "x-session-token": activeToken }, credentials: "include" }
-    );
-    const data = await res2.json();
-    const last = data.messages?.[data.messages.length - 1];
+    writer.finish();
+    await painted;      // wait for the animation to catch up
 
-    if (last && last.role === "ai") {
+    if (full) {
+      innerEl.classList.remove("streaming");
       innerEl.classList.add("markdown");
-      innerEl.innerHTML = renderMarkdown(last.content);
-    } else {
+      innerEl.innerHTML = renderMarkdown(full);
+    } else if (!errored) {
       innerEl.textContent = "No response received.";
     }
     scrollToBottom();
@@ -804,37 +879,31 @@ async function handleFileUpload(input) {
       credentials: "include", body: formData,
     });
 
-    if (isLog) {
-      const reader = res.body.getReader();
-      const dec    = new TextDecoder();
-      let   buf    = "";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const lines = buf.split("\n"); buf = lines.pop();
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const raw = line.slice(6);
-          if (raw === "[DONE]") break;
-          try {
-            const evt = JSON.parse(raw);
-            if (evt.event === "progress") {
-              document.getElementById("progress-bar").textContent = `⏳ ${evt.text}`;
-            } else if (evt.event === "report") {
-              reportText = evt.text;
-              document.getElementById("report-content").textContent = reportText;
-              const panel = document.getElementById("report-panel");
-              panel.classList.add("visible"); panel.classList.remove("collapsed");
-            } else if (evt.event === "error") {
-              document.getElementById("progress-bar").classList.remove("visible");
-              appendMessage("ai", `⚠️ ${evt.text}`);
-            }
-          } catch {}
+    if (res.status === 401) { window.location.href = "/login"; return; }
+
+    // Decide by what the server actually sent, not by the filename.
+    // A .log upload can still come back as JSON (locked, duplicate) —
+    // guessing from the extension silently swallowed those messages.
+    const isSSE = (res.headers.get("content-type") || "").includes("text/event-stream");
+
+    if (isSSE) {
+      await readSSE(res, (evt) => {
+        if (evt.event === "progress") {
+          document.getElementById("progress-bar").textContent = `⏳ ${evt.text}`;
+        } else if (evt.event === "report") {
+          reportText = evt.text;
+          document.getElementById("report-content").textContent = reportText;
+          const panel = document.getElementById("report-panel");
+          panel.classList.add("visible");
+          panel.classList.remove("collapsed");
+          appendMessage("ai", `✅ Postmortem complete for '${file.name}'.`);
+        } else if (evt.event === "error") {
+          appendMessage("ai", `⚠️ ${evt.text}`);
         }
-      }
+      });
       document.getElementById("progress-bar").classList.remove("visible");
     } else {
+      document.getElementById("progress-bar").classList.remove("visible");
       const data = await res.json();
       if (data.status === "duplicate") appendMessage("ai", `ℹ️ ${data.message}`);
       else if (data.status === "ok")   appendMessage("ai", `✅ ${data.message}`);
