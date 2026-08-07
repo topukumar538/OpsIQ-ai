@@ -1,4 +1,5 @@
 # Location: backend/postmortem/ingest.py
+import logging
 import re
 from pathlib import Path
 
@@ -7,7 +8,7 @@ from langchain_core.documents import Document
 
 from config import PM_CHUNK_LINES, PM_OVERLAP_LINES
 
-
+logger = logging.getLogger(__name__)
 
 
 def read_log(filepath: str) -> str:
@@ -28,31 +29,57 @@ def chunk_by_lines(text: str) -> list[Document]:
     return chunks
 
 
-# Single regex pattern
-ERROR_PATTERN = re.compile(r"([A-Za-z]+(?:Error|Exception|Failure|Failed|Critical|Fatal))", re.IGNORECASE)
+# Two-tier error detection.
+#
+# Tier 1 — named error classes (DatabaseException, ThreadExhaustionFailure).
+# Tier 2 — bare severity keywords (ERROR, FATAL, CRITICAL, TRACEBACK).
+#
+# The previous single pattern required a letter before the keyword, so a line
+# reading "ERROR disk full" matched nothing and the report claimed no errors
+# were found. Tier 1 runs first so a line with a real class name is attributed
+# to that class instead of the generic ERROR bucket.
+#
+# "Failed" is deliberately excluded from tier 1 — it captures noise like
+# "requestFailed=false" from ordinary INFO lines.
+NAMED_ERROR_PATTERN = re.compile(
+    r"\b([A-Z][A-Za-z0-9]*(?:Error|Exception|Failure|Fault))\b"
+)
+SEVERITY_PATTERN = re.compile(
+    r"\b(CRITICAL|FATAL|ERROR|SEVERE|PANIC|TRACEBACK|EMERGENCY|ALERT)\b",
+    re.IGNORECASE,
+)
 
-def extract_errors(text: str) -> dict:
+
+def extract_errors(text: str) -> dict[str, int]:
     """
-    Count error occurrences per named error type.
+    Count error occurrences per type, at most one match per line.
+
+    Named error classes take priority over bare severity keywords, so
+    "ERROR DatabaseException: refused" counts as DatabaseException, not both.
+    Severity keywords are uppercased so "Error" and "ERROR" don't become two
+    separate entries.
     """
-    error_counts = {}
+    error_counts: dict[str, int] = {}
     for line in text.splitlines():
-        match = ERROR_PATTERN.search(line)
+        match = NAMED_ERROR_PATTERN.search(line)
         if match:
-            name = match.group(1)
-            error_counts[name] = error_counts.get(name, 0) + 1
+            name = match.group(1)            # keep case: DatabaseException
+        else:
+            match = SEVERITY_PATTERN.search(line)
+            if not match:
+                continue
+            name = match.group(1).upper()    # normalise: Error -> ERROR
+        error_counts[name] = error_counts.get(name, 0) + 1
     return error_counts
 
-
-
 # Accept embeddings as a parameter instead of constructing inside
-def build_store(raw_log: str, llm, embeddings) -> tuple:
-    print("  Chunking log...")
+def build_store(raw_log: str, llm, embeddings) -> tuple[FAISS, dict[str, int]]:
+    logger.info("Chunking log...")
     chunks = chunk_by_lines(raw_log)
-    print(f"  {len(chunks)} chunks created")
+    logger.info("%d chunks created", len(chunks))
 
     error_counts = extract_errors(raw_log)
-    print(f"  {len(error_counts)} unique error type(s) detected")
+    logger.info("%d unique error type(s) detected", len(error_counts))
 
     # Skip noisy "None detected" doc entirely if no errors found
     extra_docs = []
@@ -63,7 +90,7 @@ def build_store(raw_log: str, llm, embeddings) -> tuple:
             metadata={"type": "error_summary"},
         ))
 
-    print("  Generating log summary...")
+    logger.info("Generating log summary...")
     # Slice at a newline boundary to avoid cutting mid-sentence
     safe_slice = raw_log[:8000].rsplit('\n', 1)[0]
     summary_response = llm.invoke(
@@ -77,11 +104,11 @@ def build_store(raw_log: str, llm, embeddings) -> tuple:
     ))
 
     all_docs = chunks + extra_docs
-    print(f"  Embedding {len(all_docs)} documents into FAISS...")
+    logger.info("Embedding %d documents into FAISS...", len(all_docs))
     store = FAISS.from_documents(all_docs, embeddings)
-    print(f"  FAISS store ready. {store.index.ntotal} vectors.\n")
+    logger.info("FAISS store ready — %d vectors", store.index.ntotal)
 
-    # Return summary_text so callers can surface it without re-querying
+
     return store, error_counts
 
 

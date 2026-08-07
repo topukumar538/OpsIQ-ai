@@ -120,3 +120,25 @@ def test_chunk_skips_empty_content():
     log = "\n\n\n"
     chunks = chunk_by_lines(log)
     assert len(chunks) == 0
+
+
+
+def test_extract_errors_prefers_named_class_over_severity():
+    """A line with both should count as the specific class, not the generic ERROR."""
+    log = "ERROR DatabaseException: connection refused"
+    result = extract_errors(log)
+    assert result == {"DatabaseException": 1}
+    assert "ERROR" not in result
+
+
+def test_extract_errors_normalises_severity_case():
+    """Error/error/ERROR are one type, not three."""
+    log = "ERROR disk full\nerror disk full\nError disk full"
+    result = extract_errors(log)
+    assert result == {"ERROR": 3}
+
+
+def test_extract_errors_ignores_failed_in_config_values():
+    """Regression: 'Failed' used to capture noise like requestFailed=false."""
+    log = "INFO requestFailed=false, retryEnabled=true"
+    assert extract_errors(log) == {}
