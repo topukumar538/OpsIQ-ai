@@ -19,6 +19,7 @@ _SECRET_KEY_PLACEHOLDERS = {
     "secret",
     "secret_key",
     "your_secret_key_here",
+    'generate_with_python_-c_"import_secrets;print(secrets.token_hex(32))"',
 }
 _MIN_SECRET_KEY_LENGTH = 32
 
@@ -96,7 +97,7 @@ class Settings(BaseSettings):
     @field_validator("secret_key")
     @classmethod
     def secret_key_must_be_secure(cls, v: str) -> str:
-        if not v or v in _SECRET_KEY_PLACEHOLDERS:
+        if not v or v.strip().lower() in _SECRET_KEY_PLACEHOLDERS:
             suggestion = secrets.token_hex(32)
             raise ValueError(
                 "\n\nSECRET_KEY is not set or is using an insecure placeholder.\n"
@@ -106,6 +107,14 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"SECRET_KEY is too short ({len(v)} chars). "
                 f"Minimum is {_MIN_SECRET_KEY_LENGTH} characters."
+            )
+        # A real key is random hex — no spaces, quotes, brackets, or English
+        # words. Length alone lets long instruction strings slip through, e.g.
+        # 'generate_with_python_-c_"import secrets; print(...)"' is 58 chars.
+        if any(c in v for c in " \"'()<>") or "generate" in v.lower():
+            raise ValueError(
+                "\n\nSECRET_KEY looks like placeholder text, not a real key.\n"
+                f"Generate one:\n\n  SECRET_KEY={secrets.token_hex(32)}\n"
             )
         return v
 
@@ -124,11 +133,18 @@ class Settings(BaseSettings):
         return v
 
     @model_validator(mode="after")
-    def rag_overlap_less_than_chunk(self) -> "Settings":
+    def chunk_overlaps_less_than_chunk_size(self) -> "Settings":
         if self.rag_chunk_overlap >= self.rag_chunk_size:
             raise ValueError(
                 f"RAG_CHUNK_OVERLAP ({self.rag_chunk_overlap}) must be "
                 f"less than RAG_CHUNK_SIZE ({self.rag_chunk_size})"
+            )
+        # Same rule for the log chunker: equal values make it advance zero
+        # lines per step, so chunking never terminates.
+        if self.pm_overlap_lines >= self.pm_chunk_lines:
+            raise ValueError(
+                f"PM_OVERLAP_LINES ({self.pm_overlap_lines}) must be "
+                f"less than PM_CHUNK_LINES ({self.pm_chunk_lines})"
             )
         return self
 
@@ -166,7 +182,7 @@ FAISS_STORE_DIR                  = settings.faiss_store_dir
 SESSION_TTL_SECONDS              = settings.session_ttl_seconds
 SESSION_CLEANUP_INTERVAL_SECONDS = settings.session_cleanup_interval_seconds
 MAX_UPLOAD_SIZE_MB               = settings.max_upload_size_mb
-ALLOWED_ORIGINS                  = settings.allowed_origins_list   # ← new export
+ALLOWED_ORIGINS                  = settings.allowed_origins_list
 
 RAG_EXTENSIONS       = {".pdf", ".docx", ".doc", ".txt"}
 POSTMORTEM_EXTENSION = ".log"
