@@ -1,0 +1,34 @@
+# The big one — venv has torch in it, several GB
+venv/
+.venv/
+env/
+
+.git/
+.github/
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Tests run via a bind-mount, not baked into the image
+backend/tests/
+
+# Secrets must never enter an image layer
+.env
+*.env
+!.env.example
+
+docker-compose.yml
+docker/
+*.md
+
+# Generated data
+*.faiss
+*.index
+faiss_store/
+*.db
+*.sqlite3
+
+.vscode/
+.idea/
+.DS_Store

@@ -1,43 +1,69 @@
-# Location: docker-compose.yml (project root)
-version: "3.9"
-
 services:
 
   db:
     image: postgres:15-alpine
     container_name: opsiq_db
     environment:
-      POSTGRES_USER: myuser
-      POSTGRES_PASSWORD: mypassword
-      POSTGRES_DB: opsiq
+      POSTGRES_USER:     ${POSTGRES_USER:-opsiq}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-opsiq_dev_password}
+      POSTGRES_DB:       ${POSTGRES_DB:-opsiq}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Scripts here run ONCE, when the data volume is first created.
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U myuser -d opsiq"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-opsiq} -d ${POSTGRES_DB:-opsiq}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   app:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
     container_name: opsiq_app
     ports:
-      - "8000:8000"
+      - "${APP_PORT:-8000}:8000"
     env_file:
       - .env
     environment:
-      # Override DATABASE_URL to use the Docker service name instead of localhost
-      DATABASE_URL: postgresql+asyncpg://myuser:mypassword@db:5432/opsiq
+      # Overrides whatever .env says, so the same .env works both for
+      # running on your laptop and for running in Docker.
+      # "db" is the hostname — Docker resolves it to the db container.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-opsiq}:${POSTGRES_PASSWORD:-opsiq_dev_password}@db:5432/${POSTGRES_DB:-opsiq}
+      DB_SSL: "false"
+      PORT: 8000
     depends_on:
       db:
-        condition: service_healthy   # wait for Postgres to be ready before starting app
+        condition: service_healthy
     volumes:
-      - faiss_data:/tmp/opsiq_stores  # persist FAISS stores across container restarts
+      - faiss_data:/tmp/opsiq_stores
+
+  # Doesn't start with `docker compose up` — the profile keeps it out.
+  # Run it with: docker compose --profile test run --rm tests
+  tests:
+    profiles: ["test"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      # Separate database. Your tests TRUNCATE tables — pointing them at
+      # the real one would wipe your development data.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-opsiq}:${POSTGRES_PASSWORD:-opsiq_dev_password}@db:5432/opsiq_test
+      DB_SSL: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Mount your real code in, so tests run against what you just edited
+      # without rebuilding the image every time.
+      - ./backend:/app/backend
+    command: ["pytest", "tests/", "-v"]
 
 volumes:
-  postgres_data:   # Postgres data survives container restarts
-  faiss_data:      # FAISS vector stores survive container restarts
+  postgres_data:
+  faiss_data:

@@ -82,6 +82,7 @@ class Settings(BaseSettings):
     # ── Database ──────────────────────────────────────────────────────────────
     database_url: str = "postgresql+asyncpg://myuser:mypassword@localhost:5432/opsiq"
     db_schema   : str = "opsiq"
+    db_ssl      : bool = False
 
     # ── Validators ────────────────────────────────────────────────────────────
 
@@ -160,6 +161,7 @@ COOKIE_SAMESITE   = settings.cookie_samesite
 BCRYPT_ROUNDS     = settings.bcrypt_rounds
 DATABASE_URL                     = settings.database_url
 DB_SCHEMA                        = settings.db_schema
+DB_SSL                           = settings.db_ssl 
 FAISS_STORE_DIR                  = settings.faiss_store_dir
 SESSION_TTL_SECONDS              = settings.session_ttl_seconds
 SESSION_CLEANUP_INTERVAL_SECONDS = settings.session_cleanup_interval_seconds

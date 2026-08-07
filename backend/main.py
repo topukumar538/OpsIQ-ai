@@ -44,9 +44,7 @@ from session import (
 logger = logging.getLogger(__name__)
 
 _BACKEND_DIR = Path(__file__).resolve().parent
-_FRONTEND_DIR = _BACKEND_DIR / "frontend"
-
-
+_FRONTEND_DIR = _BACKEND_DIR.parent / "frontend"
 
 # With imports
 from slowapi import _rate_limit_exceeded_handler
