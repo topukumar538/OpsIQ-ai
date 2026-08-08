@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import os
 import uuid
 import warnings
 from contextlib import asynccontextmanager
@@ -46,6 +47,16 @@ logger = logging.getLogger(__name__)
 
 _BACKEND_DIR  = Path(__file__).resolve().parent
 _FRONTEND_DIR = _BACKEND_DIR.parent / "frontend"
+
+# Reverse proxies (nginx, and whatever sits in front of Hugging Face Spaces)
+# buffer responses by default — collecting the whole body before forwarding it,
+# which defeats SSE entirely. Invisible locally, since there's no proxy in the
+# path; in production the answer just arrives all at once.
+SSE_HEADERS = {
+    "Cache-Control"    : "no-cache",
+    "X-Accel-Buffering": "no",
+    "Connection"       : "keep-alive",
+}
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
@@ -408,7 +419,11 @@ async def chat(
             # Always last — the frontend reader stops on this.
             yield f"data: {json.dumps({'event': 'done'})}\n\n"
 
-    return StreamingResponse(_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers=SSE_HEADERS,
+    )
 
 
 # ── Upload ────────────────────────────────────────────────────────────────────
@@ -503,7 +518,11 @@ async def upload(
             yield f"data: {json.dumps({'event': 'error', 'text': 'Log files cannot be added in RAG mode. Open a new session for postmortem analysis.'})}\n\n"
             yield f"data: {json.dumps({'event': 'done'})}\n\n"
 
-        return StreamingResponse(_warn(), media_type="text/event-stream")
+        return StreamingResponse(
+            _warn(),
+            media_type="text/event-stream",
+            headers=SSE_HEADERS,
+        )
 
     # ── Duplicate check ───────────────────────────────────────────────────────
     if await is_duplicate(db, db_id, file_hash):
@@ -574,7 +593,11 @@ async def upload(
                 # frontend SSE reader depends on it to stop looping.
                 yield f"data: {json.dumps({'event': 'done'})}\n\n"
 
-        return StreamingResponse(_run(), media_type="text/event-stream")
+        return StreamingResponse(
+            _run(),
+            media_type="text/event-stream",
+            headers=SSE_HEADERS,
+        )
 
     # ── RAG file → document ingestion ─────────────────────────────────────────
     if kind == "rag_file":
@@ -639,11 +662,12 @@ async def admin_sessions(current_user: User = Depends(get_current_user)):
     """
     Snapshot of in-memory sessions with idle times. Debug aid only.
 
-    There is no admin role, so this is gated on DEBUG rather than on the user.
-    404 rather than 403 so the endpoint's existence isn't advertised.
+    There is no admin role, so this is gated on a DEBUG env var rather than on
+    the user. Read straight from the environment rather than through config, so
+    the endpoint carries no import dependency. 404 rather than 403 so its
+    existence isn't advertised.
     """
-    from config import DEBUG
-    if not DEBUG:
+    if os.getenv("DEBUG", "").lower() not in ("1", "true", "yes"):
         raise HTTPException(status_code=404, detail="Not found")
 
     import time as _time

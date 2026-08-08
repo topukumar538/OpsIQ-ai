@@ -87,6 +87,11 @@ class Settings(BaseSettings):
     db_schema   : str = "opsiq"
     db_ssl      : bool = False
 
+
+    # Gates /admin/sessions, which lists every in-memory session. There's no
+    # admin role, so this is the gate.
+    debug: bool = False
+
     # ── Validators ────────────────────────────────────────────────────────────
 
     @field_validator("groq_api_key")
@@ -189,3 +194,4 @@ ALLOWED_ORIGINS                  = settings.allowed_origins_list
 RAG_EXTENSIONS       = {".pdf", ".docx", ".doc", ".txt"}
 POSTMORTEM_EXTENSION = ".log"
 
+DEBUG = settings.debug
