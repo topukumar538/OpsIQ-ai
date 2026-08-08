@@ -32,9 +32,13 @@ from config import MAX_TOKEN_LIMIT
 
 logger = logging.getLogger(__name__)
 
-# How many recent raw messages to load back into memory on session restore.
-# Older messages are covered by the summary. 20 is enough for immediate
-# context without blowing up the prompt on long sessions.
+# How many recent raw messages to load back on session restore. Older messages
+# are covered by the summary.
+#
+# This is a total across all three modes, not per mode. A session that chats
+# heavily after a postmortem can push all 20 into chat_memory, leaving pm_memory
+# with only its summary. Acceptable — the summary still carries that context —
+# but worth knowing if postmortem answers seem thin after a restart.
 RESTORE_MESSAGE_LIMIT = 20
 
 
@@ -172,10 +176,14 @@ async def restore_memory_from_db(
         )
 
     # ── Restore last N raw messages ───────────────────────────────────────────
+    # Ordered by id, not created_at. /chat inserts the human and AI rows of a
+    # turn microseconds apart, so their timestamps can tie — and on a tie the
+    # database is free to return them in either order, which would show the AI
+    # answering before it was asked. id is strictly increasing and never ties.
     result = await db.execute(
         select(SessionMessage)
         .where(SessionMessage.session_id == session_id)
-        .order_by(desc(SessionMessage.created_at))
+        .order_by(desc(SessionMessage.id))
         .limit(RESTORE_MESSAGE_LIMIT)
     )
     # Reverse so oldest-first order (we queried newest-first for the LIMIT)
