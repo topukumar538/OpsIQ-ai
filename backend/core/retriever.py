@@ -8,7 +8,7 @@ import logging
 from functools import lru_cache
 from typing import Optional
 
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 
 from config import EMBED_MODEL
@@ -41,9 +41,19 @@ def get_embeddings() -> HuggingFaceEmbeddings:
 def retrieve(store: Optional[FAISS], query: str, k: int) -> str:
     """
     Retrieve top-k relevant chunks from a FAISS store.
-    Returns empty string if store is None (graceful fallback).
+
+    When the store is missing or empty, return an explicit marker rather than
+    an empty string. An empty context block reads to the LLM as "no relevant
+    passages found" and it answers from general knowledge instead — the user
+    sees a confident answer and has no way to know their document was never
+    consulted. The marker makes the gap visible in the prompt.
     """
     if store is None:
-        return ""
+        logger.warning("retrieve() called with no store — returning empty context")
+        return "[No documents are loaded in this session.]"
+
     docs = store.similarity_search(query, k=k)
+    if not docs:
+        return "[No relevant passages found in the loaded documents.]"
+
     return "\n\n".join(doc.page_content for doc in docs)
