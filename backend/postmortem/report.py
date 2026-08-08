@@ -32,7 +32,7 @@ def build_report(state: dict, log_filename: str) -> str:
     ]:
         lines.append(f"\n[ {title} ]")
         lines.append(section)
-        lines.append(state.get(key, ""))
+        lines.append(state.get(key) or "  (not available)")
 
     lines.append(f"\n{divider}\n")
     return "\n".join(lines)

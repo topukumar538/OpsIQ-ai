@@ -1,10 +1,18 @@
 # Location: backend/postmortem/nodes/root_cause.py
+import logging
+
 from core.retriever import retrieve
 from config import PM_TOP_K
 
+logger = logging.getLogger(__name__)
+
 
 def root_cause(state: dict) -> dict:
-    print("  [root_cause] Identifying root cause...")
+    """
+    Fan-in node — runs only after both log_analyzer and timeline complete,
+    and uses both of their outputs as context.
+    """
+    logger.info("root_cause: identifying root cause")
     context  = retrieve(state["store"], "root cause trigger reason why failure cascading dependency", PM_TOP_K)
     response = state["llm"].invoke(
         "You are an expert SRE performing root cause analysis.\n\n"

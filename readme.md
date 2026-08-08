@@ -1,10 +1,33 @@
 # OpsIQ — Intelligent Ops Assistant
 
-A full-stack AI-powered operations assistant built with FastAPI and LangGraph. Features a parallel postmortem analysis pipeline, RAG over uploaded documents, and session-aware conversational AI — all streamed in real time.
+An AI incident-analysis tool. Upload a production log and get a structured postmortem — errors, timeline, root cause, remediation plan — then ask follow-up questions grounded in the log itself.
 
-Built as a portfolio project to demonstrate backend engineering, AI integration, and production-readiness skills.
+**Validated against three real production postmortems** (GitLab 2017, Cloudflare 2019, AWS us-east-1 2020), correctly identifying the root-cause category in all three — including a non-obvious ReDoS → CPU-exhaustion cascade. The validation suite runs from cached results, so it's reproducible without an API key.
+
+Built with FastAPI, LangGraph, FAISS, and Postgres.
 
 🔗 **[Live Demo](https://huggingface.co/spaces/topukumar/OpsIQ)**
+
+---
+
+## Validation
+
+Accuracy measured against synthetic logs reconstructed from published incident reports:
+
+| Incident | Actual root cause | OpsIQ result |
+| -------- | ----------------- | ------------ |
+| **GitLab 2017** database deletion | Operator error — `rm -rf` on the primary DB | ✅ Identified operator error, database, and the backup gap |
+| **Cloudflare 2019** global outage | ReDoS in a WAF regex rule → CPU exhaustion | ✅ Identified the WAF rule as trigger, CPU exhaustion as mechanism, and the rollback path |
+| **AWS 2020** us-east-1 outage | Kinesis thread exhaustion → cascading failure | ✅ Identified the cascade, thread exhaustion, and 5 affected services |
+
+The Cloudflare case is the hardest of the three. A regex backtracking bug starving CPU across a global network is not something you read directly off a log — it has to be inferred from the pattern of what failed and when. OpsIQ surfaced both the trigger and the propagation mechanism.
+
+```bash
+cd backend && pytest tests/test_validation.py -v
+```
+
+Results are cached to disk, so the suite runs without a Groq key and without burning quota. Delete `tests/validation/cache/` to force a fresh run.
+
 ---
 
 ## Tech Stack
@@ -12,71 +35,15 @@ Built as a portfolio project to demonstrate backend engineering, AI integration,
 | Layer            | Technology                            |
 | ---------------- | ------------------------------------- |
 | Backend          | FastAPI, Python 3.12                  |
-| AI Orchestration | LangGraph, LangChain                  |
+| AI orchestration | LangGraph, LangChain                  |
 | LLM              | Groq API (llama-3.3-70b-versatile)    |
 | Embeddings       | HuggingFace all-MiniLM-L6-v2          |
-| Vector Store     | FAISS (persisted to disk per session) |
+| Vector store     | FAISS (persisted to disk per session) |
 | Database         | PostgreSQL + SQLAlchemy async         |
-| Authentication   | HMAC-SHA256 stateless tokens + bcrypt |
-| Rate Limiting    | slowapi                               |
-| Frontend         | HTML + Vanilla JS (SSE streaming)     |
-| Server           | Uvicorn                               |
-
----
-
-## Project Structure
-
-```
-OpsIQ-ai/
-├── backend/
-│   ├── main.py                  # FastAPI app, chat/upload routes, SSE streaming
-│   ├── config.py                # Pydantic settings with validation
-│   ├── session.py               # Write-through session cache + LangGraph runner
-│   ├── router.py                # File type classifier
-│   ├── auth/
-│   │   ├── models.py            # SQLAlchemy models (cascade deletes)
-│   │   ├── router.py            # Signup / login / logout / me
-│   │   ├── tokens.py            # HMAC-SHA256 token sign + verify
-│   │   ├── dependencies.py      # FastAPI auth dependency
-│   │   └── database.py          # Async engine + session factory
-│   ├── graph/
-│   │   ├── builder.py           # LangGraph graph definition
-│   │   ├── state.py             # OpsState TypedDict
-│   │   └── nodes/
-│   │       ├── chat.py          # Chat node (temperature 0.7)
-│   │       ├── rag.py           # RAG node (temperature 0.3)
-│   │       └── postmortem.py    # Postmortem Q&A node (temperature 0.1)
-│   ├── postmortem/
-│   │   ├── builder.py           # Parallel postmortem pipeline
-│   │   ├── ingest.py            # Log chunking + error extraction + FAISS build
-│   │   ├── report.py            # Report formatting
-│   │   └── nodes/
-│   │       ├── log_analyzer.py  # Error + service analysis
-│   │       ├── timeline.py      # Chronological event reconstruction
-│   │       ├── root_cause.py    # Root cause identification
-│   │       ├── remediation.py   # Action plan generation
-│   │       └── report_summarizer.py  # Final report + memory seeding
-│   ├── rag/
-│   │   └── ingest.py            # PDF/DOCX/TXT → FAISS
-│   ├── core/
-│   │   ├── llm.py               # LLM factory (3 temperatures)
-│   │   ├── memory.py            # LangChain memory helpers + DB persistence
-│   │   ├── retriever.py         # FAISS similarity search
-│   │   └── faiss_store.py       # FAISS disk persistence helpers
-│   └── tests/
-│       ├── conftest.py
-│       ├── test_tokens.py       # 16 HMAC token tests
-│       ├── test_router.py       # 16 file classifier tests
-│       ├── test_ingest.py       # 17 log parsing tests
-│       └── test_auth.py         # 15 auth endpoint tests
-├── frontend/
-│   ├── index.html               # Main app (sidebar, chat, report panel)
-│   ├── login.html               # Sign in
-│   └── signup.html              # Create account
-├── .env.example
-├── docker-compose.yml
-└── requirements.txt
-```
+| Auth             | HMAC-SHA256 signed cookies + bcrypt   |
+| Rate limiting    | slowapi                               |
+| Frontend         | HTML + vanilla JS (SSE streaming)     |
+| Deployment       | Docker Compose                        |
 
 ---
 
@@ -87,107 +54,248 @@ OpsIQ-ai/
 | Mode           | Trigger                 | What happens                                                            |
 | -------------- | ----------------------- | ----------------------------------------------------------------------- |
 | **Chat**       | Send a message          | Conversational Q&A with rolling memory summarisation                    |
-| **RAG**        | Upload PDF / DOCX / TXT | Document ingested into FAISS, answers grounded in content               |
-| **Postmortem** | Upload `.log` file      | Parallel LangGraph pipeline — errors, timeline, root cause, remediation |
+| **RAG**        | Upload PDF / DOCX / TXT | Document ingested into FAISS, answers grounded in its content           |
+| **Postmortem** | Upload `.log`           | Parallel LangGraph pipeline — errors, timeline, root cause, remediation |
 
-### Postmortem pipeline (parallel LangGraph execution)
+### Postmortem pipeline
 
 ```
        ┌─────────────┐
-       │  Log Ingest │  chunk → embed → FAISS
+       │  Log ingest │  chunk → extract errors → embed → FAISS
        └──────┬──────┘
               │
       ┌───────┴────────┐
       ▼                ▼
-[log_analyzer]    [timeline]      ← run in parallel
+[log_analyzer]    [timeline]      ← run concurrently
       └───────┬────────┘
               ▼
-        [root_cause]
+        [root_cause]              ← fan-in: uses both outputs
               ▼
         [remediation]
               ▼
-      [report_summarizer]         ← seeds pm_memory for Q&A
+      [report_summarizer]         ← formats report, seeds pm_memory
 ```
 
-### Authentication
-
-- Signup with email + password
-- Passwords hashed with bcrypt (12 rounds)
-- Stateless HMAC-SHA256 session tokens stored in httponly cookies
-- TTL enforced by timestamp in the token — no DB lookup on every request
-- Rate limited — 10/min on login, 5/min on signup
+`log_analyzer` and `timeline` have independent inputs, so LangGraph runs them in parallel. Each node issues its own FAISS query — errors and severity for one, timestamps and sequence for the other — rather than reusing a single retrieval.
 
 ### Session management
 
-- Multiple sessions per user, fully independent
-- Write-through in-memory cache backed by Postgres
-- Server restarts are transparent — sessions restore from DB + FAISS disk automatically
-- Sessions evicted from memory after idle TTL; DB + FAISS kept for reconnection
-- Postmortem report persisted to DB so it survives container restarts
+- Multiple independent sessions per user
+- Write-through in-memory cache with Postgres as the source of truth
+- Server restarts are transparent — sessions restore from Postgres + FAISS on disk
+- Idle sessions evicted from memory after a TTL; the DB row and vectors remain for reconnection
+- The report is persisted, so the panel survives a redeploy
 
 ### Memory
 
-- Three separate memory objects per session — chat, RAG, postmortem
-- LangChain `ConversationSummaryBufferMemory` compresses old messages into a rolling summary
-- Summary + last 20 raw messages persisted to Postgres on every turn
-- On reconnect: summary covers all old context, raw messages cover recent context
-- Chat history carries into RAG memory when switching modes mid-conversation
+- Three separate memory objects per session (chat / RAG / postmortem) so modes don't pollute each other
+- `ConversationSummaryBufferMemory` compresses older turns into a rolling summary
+- Summary plus the last 20 raw messages persisted on every turn
+- On reconnect the summary covers old context and the raw messages cover recent context
+- Chat history carries into RAG memory when a file is uploaded mid-conversation
+
+### Auth
+
+- bcrypt password hashing (12 rounds)
+- Stateless HMAC-SHA256 tokens in httponly cookies
+- `token_version` in the signed payload, compared against the DB — logout invalidates every existing token rather than only clearing the local cookie
+- Timing-safe signature comparison
+- Login errors don't reveal whether the email or the password was wrong (there's a test asserting the two messages are byte-identical)
 
 ### Frontend
 
-- SSE streaming for real-time responses and postmortem progress
-- Collapsible, resizable postmortem report panel
-- Load more pagination for message history
-- Session restore on page refresh
-- Markdown rendering for AI responses
+- Live token-by-token streaming over SSE
+- Collapsible, resizable report panel
+- Paginated message history
+- Session restore on refresh
+- Markdown rendering
 - Responsive — sidebar collapses on mobile
-- Custom delete confirmation modal
 
 ---
 
-## Validation
+## Setup
 
-Postmortem accuracy validated using synthetic log files reconstructed from public incident reports:
+Docker is the supported path. It runs Postgres and the app together, so there's nothing to install locally beyond Docker itself.
 
-| Incident | Root Cause | OpsIQ Result |
-| -------- | ---------- | ------------ |
-| GitLab 2017 database deletion | Human error — accidental `rm -rf` on primary DB | ✅ Identified operator error + database + backup gap |
-| Cloudflare 2019 global outage | ReDoS in WAF regex rule → CPU exhaustion | ✅ Identified regex/WAF trigger + CPU exhaustion + rollback path |
-| AWS 2020 us-east-1 outage | Kinesis thread exhaustion → cascading failure | ✅ Identified cascading failure + thread exhaustion + 5 affected services |
+### Prerequisites
 
-The Cloudflare case is the most non-trivial — a regex backtracking bug causing CPU starvation across the global network is not obvious from logs alone. OpsIQ correctly surfaced the WAF rule as the trigger and CPU exhaustion as the propagation mechanism.
+- Docker and Docker Compose v2
+- A Groq API key — [free tier available](https://console.groq.com)
+
+### 1. Clone and configure
+
+```bash
+git clone https://github.com/topukumar538/OpsIQ-ai
+cd OpsIQ-ai
+cp .env.example .env
+```
+
+Edit `.env` and set the two required values:
+
+```dotenv
+GROQ_API_KEY=gsk_your_key_here
+SECRET_KEY=
+```
+
+Generate a secret key:
+
+```bash
+python3 -c "import secrets; print(secrets.token_hex(32))"
+```
+
+The app refuses to start with an empty, short, or placeholder-looking `SECRET_KEY` — the error message prints a freshly generated one you can paste in.
+
+### 2. Run
+
+```bash
+docker compose up --build
+```
+
+Open **http://localhost:8000**
+
+First build takes a few minutes — it installs torch and bakes the embeddings model into the image so container starts don't depend on Hugging Face being reachable.
+
+### 3. Stop
+
+```bash
+docker compose down       # keeps your data
+docker compose down -v    # deletes the database and vector stores
+```
+
+### Running locally without Docker
+
+Possible, but you'll need Postgres 15+ running yourself:
+
+```bash
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+cd backend && uvicorn main:app --reload --workers 1
+```
+
+Set `DATABASE_URL` to your own instance and `DB_SSL=false`.
 
 ---
 
-## API Endpoints
+## Tests
 
-### Auth — `/auth`
-
-```
-POST /auth/signup       register new account
-POST /auth/login        login, sets httponly cookie
-POST /auth/logout       clears cookie
-GET  /auth/me           get current user info
+```bash
+cd backend
+pytest tests/ -v
 ```
 
-### Sessions — `/session`
+Six test files. `test_auth.py` needs Postgres and points at a separate `opsiq_test` database, created automatically by `docker/initdb/`. The rest are pure unit tests with no dependencies.
+
+```bash
+# no database needed
+pytest tests/test_tokens.py tests/test_router.py tests/test_ingest.py tests/test_config.py -v
+
+# needs Postgres
+pytest tests/test_auth.py -v
+
+# accuracy validation — runs from cache, no API key needed
+pytest tests/test_validation.py -v
+```
+
+Or run the whole suite in a container against the same image the app uses:
+
+```bash
+docker compose --profile test run --rm tests
+```
+
+---
+
+## Project Structure
 
 ```
-POST   /session              create new session
-GET    /sessions             list all sessions for current user
-DELETE /session              delete session (removes DB row + FAISS disk)
-GET    /session/mode         get current mode (chat / rag / postmortem)
-GET    /session/memory       get memory summary + recent messages + report
-GET    /session/messages     paginated message history (?before=id&limit=20)
+OpsIQ-ai/
+├── Dockerfile                   # at the root — Hugging Face Spaces requires it here
+├── docker-compose.yml           # app + Postgres + test runner
+├── requirements.txt
+├── .env.example
+├── docker/initdb/               # creates opsiq_test on first volume init
+├── backend/
+│   ├── main.py                  # FastAPI app, routes, SSE streaming
+│   ├── config.py                # Pydantic settings with validation
+│   ├── session.py               # Write-through session cache + postmortem runner
+│   ├── prompts.py               # Prompt templates for the three modes
+│   ├── router.py                # File type classifier
+│   ├── auth/
+│   │   ├── models.py            # SQLAlchemy models (cascade deletes)
+│   │   ├── router.py            # signup / login / logout / me
+│   │   ├── tokens.py            # HMAC-SHA256 sign + verify
+│   │   ├── dependencies.py      # auth dependency
+│   │   └── database.py          # async engine + session factory
+│   ├── graph/
+│   │   └── state.py             # OpsState, mode constants, initial state
+│   ├── postmortem/
+│   │   ├── builder.py           # parallel pipeline graph
+│   │   ├── ingest.py            # chunking, error extraction, FAISS build
+│   │   ├── report.py            # report formatting
+│   │   ├── state.py             # PostmortemState
+│   │   └── nodes/               # 5 pipeline nodes
+│   ├── rag/ingest.py            # PDF/DOCX/TXT → FAISS
+│   ├── core/
+│   │   ├── llm.py               # LLM factory (3 temperatures)
+│   │   ├── memory.py            # memory helpers + DB persistence
+│   │   ├── retriever.py         # FAISS similarity search
+│   │   └── faiss_store.py       # disk persistence
+│   └── tests/
+│       ├── test_tokens.py       # HMAC token signing and tampering
+│       ├── test_router.py       # file classifier
+│       ├── test_ingest.py       # log parsing and error extraction
+│       ├── test_config.py       # settings validation
+│       ├── test_auth.py         # auth endpoints (needs Postgres)
+│       └── test_validation.py   # postmortem accuracy vs real incidents
+└── frontend/
+    ├── index.html               # main app
+    ├── login.html
+    └── signup.html
 ```
 
-### Chat & Upload
+---
+
+## API
+
+### Auth
 
 ```
-POST /chat              send a message (SSE streaming response)
-POST /upload            upload a file (SSE streaming for log files)
-GET  /upload/extensions accepted file types + max size
+POST /auth/signup       register  (5/min)
+POST /auth/login        login     (10/min)
+POST /auth/logout       invalidates all tokens for this user
+GET  /auth/me           current user
 ```
+
+### Sessions
+
+```
+POST   /session              create
+GET    /sessions             list all for current user
+DELETE /session              delete (DB row + FAISS files)
+GET    /session/state        mode + report + first page of messages
+GET    /session/mode         current mode
+GET    /session/memory       memory summary + messages + report
+GET    /session/messages     paginated history (?before=id&limit=20)
+```
+
+### Chat and upload
+
+```
+POST /chat              send a message      (20/min, 100/day)  SSE
+POST /upload            upload a file       (3/min, 20/day)    SSE for .log
+GET  /upload/extensions accepted types + size limit
+```
+
+Every streaming response is JSON-framed SSE:
+
+```
+data: {"event":"token",   "text":"..."}
+data: {"event":"progress","text":"..."}
+data: {"event":"report",  "text":"..."}
+data: {"event":"error",   "text":"..."}
+data: {"event":"done"}
+```
+
+Raw `data: <text>` framing breaks apart at every blank line in the model's markdown — SSE treats a blank line as end-of-message. JSON encoding keeps newlines intact so the stream can be rendered live.
 
 ---
 
@@ -195,14 +303,15 @@ GET  /upload/extensions accepted file types + max size
 
 ```
 users
-  id, username, email, password_hash, created_at
+  id, username, email, password_hash, token_version, created_at
 
 sessions
   id, token, user_id (FK cascade), name, mode, is_locked,
-  report_str, faiss_store_path, created_at, last_accessed_at
+  report_str, created_at, last_accessed_at
 
 session_files
   id, session_id (FK cascade), filename, file_hash, created_at
+  UNIQUE (session_id, file_hash)
 
 session_memory
   id, session_id (FK cascade), chat_summary, rag_summary, pm_summary, updated_at
@@ -213,177 +322,39 @@ session_messages
 
 ---
 
-## Setup
+## Design Decisions
 
-### Prerequisites
+**Stateless tokens with a revocation hatch.** Cookies are signed with HMAC-SHA256 and carry a `token_version`. The version is compared against the user row — which is already being fetched for authorisation, so the check is free. Logout bumps it, invalidating every token issued before that moment. Without it, clearing the cookie would leave a captured copy valid for its full 7 days.
 
-- Python 3.12
-- PostgreSQL 15+
-- Groq API key — [get one free](https://console.groq.com)
+**Three LLM temperatures per session.** Chat at 0.7 for natural conversation, RAG at 0.3 for document grounding, postmortem at 0.1 for near-deterministic analysis. Separate cached instances, created at session start.
 
-### 1. Clone and install
+**Write-through session cache.** In-memory dict for speed, Postgres as source of truth. Restarts are transparent. TTL eviction drops the memory copy only; disk and DB persist so the session can be restored.
 
-```bash
-git clone https://github.com/topukumar538/OpsIQ-ai
-cd OpsIQ-ai/backend
-python -m venv venv
-source venv/bin/activate      # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
+**Parallel LangGraph nodes.** `log_analyzer` and `timeline` have independent inputs and run concurrently. Each returns only its own key — returning a full state dict would let one silently overwrite the other's result.
 
-### 2. Create PostgreSQL database
+**FAISS path isolation.** Stores are keyed `{user_id}/{session_token}/{kind}`, and `user_id` comes from the verified auth cookie rather than user input. There is no path from one user's query to another's vectors.
 
-```bash
-sudo -u postgres psql
-```
+**Explicit SSL rather than inferred.** `DB_SSL` is a setting, not a guess. An earlier version enabled SSL whenever the DB host wasn't `localhost`, reasoning that anything else must be a cloud provider. That broke the moment Postgres moved into a container, where the host is `db` but SSL is off — asyncpg fails with "rejected SSL upgrade" rather than falling back.
 
-```sql
-CREATE USER myuser WITH PASSWORD 'mypassword';
-CREATE DATABASE opsiq OWNER myuser;
-\q
-```
+**Blocking pipeline in a thread pool.** LangGraph's `.invoke()` is synchronous. `run_in_executor` keeps it off the event loop so a long postmortem doesn't freeze other users' requests.
 
-### 3. Create `.env` at the project root
+**One postmortem per session.** A session locks after a log is analysed. A report has a single root cause, timeline, and remediation set — merging two unrelated incidents into one report produces incoherent analysis. Multiple incidents mean multiple sessions.
 
-Copy `.env.example` and fill in the required values:
+**Session restore on login.** The app reopens whatever session you last had open rather than landing on a blank page. Someone analysing an outage who closes their laptop should pick up where they left off — closer to a debugger than a chat app.
 
-```bash
-cp .env.example .env
-```
-
-```dotenv
-# ── Required ───────────────────────────────────────────────────────────────────
-GROQ_API_KEY=your_groq_api_key_here
-SECRET_KEY=your_secret_key_here
-DATABASE_URL=postgresql+asyncpg://myuser:mypassword@localhost:5432/opsiq
-ALLOWED_ORIGINS=http://localhost:8000
-
-# ── LLM ────────────────────────────────────────────────────────────────────────
-MODEL_NAME=llama-3.3-70b-versatile
-CHAT_TEMPERATURE=0.7
-RAG_TEMPERATURE=0.3
-PM_TEMPERATURE=0.1
-MAX_TOKEN_LIMIT=2000
-EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2
-
-# ── RAG ────────────────────────────────────────────────────────────────────────
-RAG_CHUNK_SIZE=500
-RAG_CHUNK_OVERLAP=50
-RAG_TOP_K=4
-
-# ── Postmortem ─────────────────────────────────────────────────────────────────
-PM_CHUNK_LINES=30
-PM_OVERLAP_LINES=5
-PM_TOP_K=4
-
-# ── Upload ─────────────────────────────────────────────────────────────────────
-MAX_UPLOAD_SIZE_MB=50
-
-# ── Cookie ─────────────────────────────────────────────────────────────────────
-COOKIE_NAME=opsiq_session
-COOKIE_MAX_AGE=604800
-COOKIE_SECURE=false          # set true in production (HTTPS only)
-COOKIE_SAMESITE=lax
-BCRYPT_ROUNDS=12
-
-# ── Session cache ──────────────────────────────────────────────────────────────
-SESSION_TTL_SECONDS=7200
-SESSION_CLEANUP_INTERVAL_SECONDS=900
-
-# ── FAISS ──────────────────────────────────────────────────────────────────────
-# /tmp works for local dev. In production point this at a mounted volume so
-# stores survive container restarts (e.g. /mnt/data/opsiq_stores).
-FAISS_STORE_DIR=/tmp/opsiq_stores
-```
-
-Generate a secret key:
-
-```bash
-python -c "import secrets; print(secrets.token_hex(32))"
-```
-
-### 4. Run
-
-```bash
-cd backend
-uvicorn main:app --reload
-```
-
-Open http://localhost:8000
+**Request-count rate limits, not token accounting.** The Groq quota is shared across everyone using the deployment, so a per-user cap stops one person exhausting it. Counting requests keeps this to two decorators rather than a usage-tracking table; per-user token accounting would be the next step if the demo saw real traffic. Limits are keyed by IP, so users behind the same network share a budget.
 
 ---
 
-## Docker
+## Known Limitations
 
-The `docker-compose.yml` at the project root runs the full stack — Postgres + app — with a single command. Both Postgres data and FAISS vector stores are persisted in named volumes so they survive container restarts.
+**Single worker required.** `_sessions` and the per-session `asyncio.Lock` live inside one Python process. With multiple uvicorn workers each gets its own copy, so two workers handling concurrent requests for the same session can't see each other's locks — both proceed, and the second to finish overwrites the first's memory. Run with `--workers 1`. Horizontal scaling would need Redis for the cache and Postgres advisory locks for concurrency.
 
-### 1. Create `.env` at the project root
+**No database migrations.** The schema is created via `create_all` at startup. Changing a table requires recreating the database. Alembic would be the next step for a real deployment.
 
-Use the same `.env` as above. The `DATABASE_URL` in your `.env` will be overridden automatically by Docker Compose to use the internal service name (`db`), so you can leave it pointing to `localhost` for local dev — it won't affect the Docker run.
+**Rate limits are per IP, not per user.** Two people on the same network share a budget. Adequate for a demo; per-account limits would need usage tracking.
 
-Set `FAISS_STORE_DIR=/tmp/opsiq_stores` — this matches the volume mount in `docker-compose.yml`. If you change this value, update the volume mount path in `docker-compose.yml` to match.
-
-For Docker, also set:
-
-```dotenv
-COOKIE_SECURE=false
-ALLOWED_ORIGINS=http://localhost:8000
-```
-
-### 2. Build and run
-
-```bash
-docker compose up --build
-```
-
-Open http://localhost:8000
-
-### 3. Stop
-
-```bash
-# Stop containers, keep volumes (data preserved)
-docker compose down
-
-# Stop and delete all data
-docker compose down -v
-```
-
----
-
-## Running Tests
-
-Tests are run manually inside the `backend/` directory.
-
-```bash
-cd backend
-
-# Fast — no DB needed
-pytest tests/test_tokens.py tests/test_router.py tests/test_ingest.py -v
-
-# Auth integration tests — requires a running Postgres instance
-pytest tests/test_auth.py -v
-
-# All tests
-pytest tests/ -v
-```
-
----
-
-## Key Design Decisions
-
-**Stateless HMAC tokens** Session cookies are signed with HMAC-SHA256 and verified without a DB lookup on every request. TTL is enforced by a timestamp embedded in the token itself. No session table lookups on hot paths.
-
-**Three LLM temperatures per session** Chat (0.7) for natural conversation, RAG (0.3) for accurate document Q&A, postmortem (0.1) for near-deterministic reproducible analysis. Each is a separate cached instance created at session startup.
-
-**Write-through session cache** In-memory dict for fast access, Postgres as source of truth. Server restarts are transparent — sessions restore from DB + FAISS disk stores automatically. TTL eviction only drops from memory; data stays on disk for reconnection.
-
-**Parallel LangGraph nodes** `log_analyzer` and `timeline` run concurrently since they have independent inputs, reducing postmortem latency. Root cause analysis then uses both outputs.
-
-**FAISS path isolation** Stores keyed by `user_id/session_token/kind` — two users with identical tokens (impossible but defensive) cannot cross-pollute each other's vector stores.
-
-**Chat history carries into RAG** When a user uploads a file mid-conversation, the existing chat memory (summary + raw messages) is copied into RAG memory. Context like names and prior discussion is not lost on mode switch.
-
-**Sync graph runner in thread pool** LangGraph's `.invoke()` is blocking. `run_in_executor` moves it off the async event loop onto a thread pool worker so other users' requests are never frozen during a long postmortem run.
+**Upload limit is 10MB** — sized by LLM processing time rather than storage. A larger log would embed thousands of chunks and exhaust the Groq quota before finishing.
 
 ---
 
@@ -394,26 +365,29 @@ pytest tests/ -v
 | `GROQ_API_KEY` | required | Groq API key |
 | `SECRET_KEY` | required | Min 32 chars — signs session tokens |
 | `DATABASE_URL` | required | PostgreSQL async connection string |
+| `DB_SSL` | `false` | `true` for hosted DBs (Neon, Supabase, RDS); `false` for local and Docker |
+| `DB_SCHEMA` | `opsiq` | Postgres schema name |
 | `ALLOWED_ORIGINS` | `http://localhost:8000` | Comma-separated CORS origins |
+| `DEBUG` | `false` | Enables `/admin/sessions`; leave off in production |
 | `MODEL_NAME` | `llama-3.3-70b-versatile` | Groq model |
 | `CHAT_TEMPERATURE` | `0.7` | Chat LLM temperature |
 | `RAG_TEMPERATURE` | `0.3` | RAG LLM temperature |
 | `PM_TEMPERATURE` | `0.1` | Postmortem LLM temperature |
-| `MAX_TOKEN_LIMIT` | `2000` | LangChain memory token limit before summarisation |
-| `EMBED_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | HuggingFace embeddings model |
-| `RAG_CHUNK_SIZE` | `500` | Token chunk size for RAG ingestion |
-| `RAG_CHUNK_OVERLAP` | `50` | Chunk overlap for RAG ingestion |
-| `RAG_TOP_K` | `4` | Number of RAG chunks retrieved per query |
+| `MAX_TOKEN_LIMIT` | `2000` | Memory token limit before summarisation |
+| `EMBED_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Embeddings model |
+| `RAG_CHUNK_SIZE` | `500` | Chunk size for RAG ingestion |
+| `RAG_CHUNK_OVERLAP` | `50` | Chunk overlap — must be less than chunk size |
+| `RAG_TOP_K` | `4` | Chunks retrieved per RAG query |
 | `PM_CHUNK_LINES` | `30` | Log lines per postmortem chunk |
-| `PM_OVERLAP_LINES` | `5` | Overlap lines between postmortem chunks |
-| `PM_TOP_K` | `4` | Number of postmortem chunks retrieved per query |
-| `MAX_UPLOAD_SIZE_MB` | `50` | Max file upload size |
+| `PM_OVERLAP_LINES` | `5` | Overlap lines — must be less than chunk lines |
+| `PM_TOP_K` | `4` | Chunks retrieved per postmortem query |
+| `MAX_UPLOAD_SIZE_MB` | `10` | Max upload size |
 | `COOKIE_NAME` | `opsiq_session` | Session cookie name |
-| `COOKIE_MAX_AGE` | `604800` | Cookie lifetime in seconds (7 days) |
-| `COOKIE_SECURE` | `false` | Set `true` in production (HTTPS) |
+| `COOKIE_MAX_AGE` | `604800` | Cookie lifetime (7 days) |
+| `COOKIE_SECURE` | `true` | Set `false` for local HTTP development |
 | `COOKIE_SAMESITE` | `lax` | CSRF protection |
 | `BCRYPT_ROUNDS` | `12` | bcrypt work factor |
-| `SESSION_TTL_SECONDS` | `7200` | Idle session eviction from memory |
+| `SESSION_TTL_SECONDS` | `7200` | Idle eviction from memory |
 | `SESSION_CLEANUP_INTERVAL_SECONDS` | `900` | Cleanup task interval |
-| `FAISS_STORE_DIR` | `/tmp/opsiq_stores` | FAISS persistence directory — use a mounted volume in production |
-| `DB_SCHEMA` | `opsiq` | Postgres schema name |
+| `FAISS_STORE_DIR` | `/tmp/opsiq_stores` | Vector store directory — mount a volume in production |
+| `PORT` | `8000` | Server port (Hugging Face Spaces requires `7860`) |

@@ -1,10 +1,14 @@
 # Location: backend/postmortem/nodes/remediation.py
+import logging
+
 from core.retriever import retrieve
 from config import PM_TOP_K
 
+logger = logging.getLogger(__name__)
+
 
 def remediation(state: dict) -> dict:
-    print("  [remediation] Generating remediation plan...")
+    logger.info("remediation: generating remediation plan")
     context  = retrieve(state["store"], "fix recovery restart solution prevention mitigation", PM_TOP_K)
     response = state["llm"].invoke(
         "You are an expert SRE creating a remediation plan.\n\n"
