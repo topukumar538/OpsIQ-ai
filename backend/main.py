@@ -266,7 +266,54 @@ async def get_messages(
         "oldest_id": messages[0].id if messages else None,
     }
  
+@app.get("/session/state")
+async def get_session_state(
+    session : dict         = Depends(get_active_session),
+    db      : AsyncSession = Depends(get_db),
+):
+    """
+    Everything the frontend needs to open a session, in one request.
 
+    switchSession() used to call /session/mode, /session/memory and
+    /session/messages in sequence — three round trips, three auth lookups
+    and three session resolutions for one user action.
+    """
+    from auth.models import SessionMessage
+    from sqlalchemy import select, desc
+
+    state = session["state"]
+    db_id = session["db_id"]
+
+    result = await db.execute(
+        select(SessionMessage)
+        .where(SessionMessage.session_id == db_id)
+        .order_by(desc(SessionMessage.id))
+        .limit(20)
+    )
+    messages = list(reversed(result.scalars().all()))
+
+    has_more = False
+    if messages:
+        older = await db.execute(
+            select(SessionMessage.id)
+            .where(
+                SessionMessage.session_id == db_id,
+                SessionMessage.id < messages[0].id,
+            )
+            .limit(1)
+        )
+        has_more = older.scalar_one_or_none() is not None
+
+    return {
+        "mode"     : state["mode"],
+        "report"   : state.get("report_str", ""),
+        "messages" : [
+            {"id": m.id, "role": m.role, "content": m.content, "mode": m.mode}
+            for m in messages
+        ],
+        "has_more" : has_more,
+        "oldest_id": messages[0].id if messages else None,
+    }
 # ── Chat ──────────────────────────────────────────────────────────────────────
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=32_000)

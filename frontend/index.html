@@ -510,7 +510,6 @@ async function switchSession(token) {
   document.getElementById("report-panel").classList.remove("visible");
   document.getElementById("progress-bar").classList.remove("visible");
 
-  // Reset chat area — keep load-more-wrap, clear rest
   document.getElementById("chat-area").innerHTML = `
     <div id="load-more-wrap">
       <button id="load-more-btn" onclick="loadMoreMessages()">↑ Load older messages</button>
@@ -518,34 +517,54 @@ async function switchSession(token) {
     <div id="empty-state"><h2>Loading session...</h2></div>
   `;
 
-  const headers  = sessionHeader();
-  const modeRes  = await fetch("/session/mode", { headers, credentials: "include" });
-  const modeData = await modeRes.json();
-  currentMode    = modeData.mode;
-  updateModeBadge(modeData.mode);
-
   const s = allSessions.find(s => s.token === token);
   document.getElementById("session-title").textContent = s ? s.name : "Session";
   document.getElementById("upload-btn").style.display  = "flex";
   document.getElementById("mode-badge").style.display  = "inline-block";
 
-  // Load report if postmortem
+  // One request for mode, report, and the first page of messages.
+  let data;
   try {
-    const memRes  = await fetch("/session/memory", { headers, credentials: "include" });
-    const memData = await memRes.json();
-    if (memData.report) {
-      reportText = memData.report;
-      document.getElementById("report-content").textContent = reportText;
-      const panel = document.getElementById("report-panel");
-      panel.classList.add("visible");
-      panel.classList.remove("collapsed");
+    const res = await fetch("/session/state", {
+      headers: { "x-session-token": token }, credentials: "include",
+    });
+    if (res.status === 401) { window.location.href = "/login"; return; }
+    data = await res.json();
+  } catch {
+    document.getElementById("chat-area").innerHTML =
+      '<div id="empty-state"><h2>Could not load session</h2><p>Try again.</p></div>';
+    return;
+  }
+
+  currentMode = data.mode;
+  updateModeBadge(data.mode);
+
+  if (data.report) {
+    reportText = data.report;
+    document.getElementById("report-content").textContent = reportText;
+    const panel = document.getElementById("report-panel");
+    panel.classList.add("visible");
+    panel.classList.remove("collapsed");
+  }
+
+  removeEmptyState();
+  if (data.messages && data.messages.length) {
+    for (const m of data.messages) {
+      appendMessage(m.role === "human" ? "user" : "ai", m.content, m.id);
     }
-  } catch {}
+    oldestMessageId = data.oldest_id;
+    hasMoreMessages = data.has_more;
+    scrollToBottom();
+  } else {
+    oldestMessageId = null;
+    hasMoreMessages = false;
+    document.getElementById("chat-area").insertAdjacentHTML("beforeend",
+      '<div id="empty-state"><h2>Session loaded</h2><p>Continue your conversation or upload a file.</p></div>'
+    );
+  }
 
-  // Load initial messages via paginated endpoint
-  await loadInitialMessages();
+  updateLoadMoreBtn();
 }
-
 // ── Message pagination ────────────────────────────────────────────────────────
 async function loadInitialMessages() {
   oldestMessageId = null;

@@ -10,6 +10,16 @@ Architecture:
     Write: always write to DB + disk, then update _sessions
     TTL:   _sessions entries evicted after idle; DB row stays until user deletes
 
+SINGLE WORKER ONLY
+    _sessions and the per-session asyncio.Lock live inside one Python process.
+    Running multiple uvicorn workers gives each its own copy of both, so two
+    workers handling concurrent requests for the same session cannot see each
+    other's locks. Both proceed, and the second to finish overwrites the first
+    one's memory — the user's message silently disappears from history.
+
+    Run with --workers 1. Scaling horizontally would require moving the cache
+    to Redis and the locks to Postgres advisory locks.
+
 This means:
     - Server restarts are transparent — sessions restore from DB + FAISS disk
     - Multiple sessions per user, fully independent
@@ -58,6 +68,7 @@ def _make_in_memory_session(
         "pm_llm"       : pm_llm,
         "lock"         : asyncio.Lock(),
         "last_accessed": time.time(),
+        "last_db_touch": 0.0,     # when we last wrote last_accessed_at to the DB
         "named"        : False,
     }
 
@@ -271,9 +282,32 @@ async def save_report_to_db(
     await db.commit()
 
 
+# How stale last_accessed_at is allowed to get before we bother writing.
+# The field feeds sidebar sorting and a 2-hour eviction threshold, so
+# minute-level precision is far more than enough.
+_TOUCH_INTERVAL_SECONDS = 60
+
+
 async def touch_session(token: str, user_id: int, db: AsyncSession) -> None:
-    """Update last_accessed_at in DB (called on every request)."""
+    """
+    Record that a session was used.
+
+    Previously this ran an UPDATE + COMMIT on every authenticated request,
+    including read-only ones — opening a session in the sidebar cost three
+    writes of the same timestamp within milliseconds. Now it writes at most
+    once per minute per session.
+    """
     from datetime import datetime, timezone
+
+    session = _sessions.get(token)
+    now     = time.time()
+
+    if session is not None:
+        last_written = session.get("last_db_touch", 0.0)
+        if now - last_written < _TOUCH_INTERVAL_SECONDS:
+            return          # written recently enough — skip the disk write
+        session["last_db_touch"] = now
+
     await db.execute(
         update(SessionModel)
         .where(SessionModel.token == token, SessionModel.user_id == user_id)
@@ -282,7 +316,7 @@ async def touch_session(token: str, user_id: int, db: AsyncSession) -> None:
     await db.commit()
 
 
-# ── Graph runner ──────────────────────────────────────────────────────────────
+
 # ── Postmortem runner ─────────────────────────────────────────────────────────
 
 def _run_postmortem_sync(token: str, user_id: int, file_path: str) -> dict:

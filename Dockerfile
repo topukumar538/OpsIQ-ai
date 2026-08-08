@@ -49,4 +49,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
 
 # "exec" makes uvicorn the main process so Ctrl+C stops it immediately
 # instead of waiting 10 seconds for a force-kill.
-CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT}"]
+# --workers 1 is required, not incidental. See the note in session.py.
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT} --workers 1"]
