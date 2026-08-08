@@ -1,8 +1,8 @@
 FROM python:3.12-slim
 
-# PYTHONUNBUFFERED: without it, print() output stays invisible in
-# `docker compose logs` until 8KB piles up — the postmortem pipeline
-# would look frozen while it's actually working fine.
+# PYTHONUNBUFFERED is load-bearing: without it stdout is block-buffered off a
+# TTY and the postmortem pipeline's progress output stays invisible in
+# `docker compose logs` until 8KB accumulates.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
@@ -19,26 +19,27 @@ ENV PATH="/home/user/.local/bin:$PATH"
 
 WORKDIR /app
 
-# Install packages before copying code, so editing code doesn't
-# trigger a full reinstall on every build.
+# Requirements first so source edits don't invalidate the install layer.
+# No --no-cache-dir: it would defeat the BuildKit cache mount below.
+# uid/gid on the mount because we run as user 1000, not root.
 COPY --chown=user requirements.txt ./requirements.txt
 RUN --mount=type=cache,target=/home/user/.cache/pip,uid=1000,gid=1000 \
     python -m pip install -r requirements.txt
 
-# Download the embeddings model at build time. Otherwise the app fetches
-# ~90MB on every container start, and won't boot if huggingface.co is down.
+# Bake the embeddings model so cold starts don't re-download ~90MB and boot
+# doesn't depend on huggingface.co being reachable. Before the source COPY so
+# editing code doesn't invalidate this layer.
 ENV HF_HOME=/home/user/.cache/huggingface
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
 
-# Same shape as the repo: backend/ and frontend/ side by side under /app.
-# This is what makes _BACKEND_DIR.parent / "frontend" resolve correctly
-# both on your laptop and inside the container.
+# Mirror the repo layout: backend and frontend as siblings under /app, so
+# _BACKEND_DIR.parent / "frontend" resolves identically in dev and in the
+# container.
 COPY --chown=user backend/  /app/backend/
 COPY --chown=user frontend/ /app/frontend/
 
 RUN mkdir -p /tmp/opsiq_stores
 
-# Run from inside backend/ so `uvicorn main:app` finds main.py
 WORKDIR /app/backend
 
 ENV PORT=8000
@@ -47,7 +48,16 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD curl -fsS "http://localhost:${PORT}/login" || exit 1
 
-# "exec" makes uvicorn the main process so Ctrl+C stops it immediately
-# instead of waiting 10 seconds for a force-kill.
-# --workers 1 is required, not incidental. See the note in session.py.
-CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT} --workers 1"]
+# exec so uvicorn is PID 1 and receives SIGTERM directly — otherwise the shell
+# swallows it and the container waits out the full kill timeout.
+#
+# --workers 1 is required, not incidental: the session cache and locks are
+# in-process. See the note at the top of session.py.
+#
+# --proxy-headers makes uvicorn read X-Forwarded-For, so request.client.host is
+# the real client rather than the reverse proxy. Without it, every request
+# behind a proxy shares a single rate-limit bucket and the first user to hit
+# the limit locks out everyone else.
+# --forwarded-allow-ips='*' is only safe because nothing reaches this container
+# except through the platform's proxy.
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT} --workers 1 --proxy-headers --forwarded-allow-ips='*'"]

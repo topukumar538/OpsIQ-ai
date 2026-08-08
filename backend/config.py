@@ -24,19 +24,17 @@ _SECRET_KEY_PLACEHOLDERS = {
 _MIN_SECRET_KEY_LENGTH = 32
 
 
-database_url: str = "postgresql+asyncpg://myuser:mypassword@localhost:5432/opsiq"
-
 class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
-        env_file=_ENV_FILES or None, # type: ignore
+        env_file=_ENV_FILES or None,  # type: ignore
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
         protected_namespaces=("settings_",),
     )
 
-    # ── LLM ──────────────────────────────────────────────────────────────────
+    # ── LLM ───────────────────────────────────────────────────────────────────
     groq_api_key    : str   = ""
     model_name      : str   = "llama-3.3-70b-versatile"
     chat_temperature: float = 0.7
@@ -55,23 +53,31 @@ class Settings(BaseSettings):
     rag_top_k        : int = 4
 
     # ── Upload ────────────────────────────────────────────────────────────────
+    # The practical ceiling is lower than this: a large log produces thousands
+    # of chunks to embed and will exhaust the Groq quota before the analysis
+    # finishes. The upload succeeds; the pipeline then fails with a rate-limit
+    # message.
     max_upload_size_mb: int = 50
 
     # ── Postmortem ────────────────────────────────────────────────────────────
     pm_chunk_lines  : int = 30
     pm_overlap_lines: int = 5
     pm_top_k        : int = 4
+    # Ceiling on the pipeline. It holds the session lock across six LLM calls,
+    # and cleanup_expired_sessions won't evict a locked session — so without a
+    # timeout a hung request blocks that session and leaks it from the cache
+    # for the lifetime of the process.
+    postmortem_timeout_seconds: int = 300
 
     # ── Auth / Session ────────────────────────────────────────────────────────
-    secret_key      : str                               = ""
-    cookie_name     : str                               = "opsiq_session"
-    cookie_max_age  : int                               = 7 * 24 * 60 * 60
-    cookie_secure   : bool                              = True
+    secret_key      : str                              = ""
+    cookie_name     : str                              = "opsiq_session"
+    cookie_max_age  : int                              = 7 * 24 * 60 * 60
+    cookie_secure   : bool                             = True
     cookie_samesite : Literal["lax", "strict", "none"] = "lax"
-    bcrypt_rounds   : int                               = 12
+    bcrypt_rounds   : int                              = 12
     session_ttl_seconds              : int = 2 * 60 * 60
     session_cleanup_interval_seconds : int = 15 * 60
-
 
     allowed_origins: str = (
         "http://localhost:5173,"
@@ -83,12 +89,17 @@ class Settings(BaseSettings):
     faiss_store_dir: str = "/tmp/opsiq_stores"
 
     # ── Database ──────────────────────────────────────────────────────────────
-    database_url: str = "postgresql+asyncpg://myuser:mypassword@localhost:5432/opsiq"
-    db_schema   : str = "opsiq"
+    database_url: str  = "postgresql+asyncpg://opsiq:opsiq_dev_password@localhost:5432/opsiq"
+    db_schema   : str  = "opsiq"
+    # Set explicitly, never inferred from the hostname. An earlier version
+    # enabled SSL whenever the host wasn't localhost, assuming anything else
+    # must be a cloud provider — that broke the moment Postgres moved into a
+    # container, where the host is "db" but SSL is off and asyncpg fails with
+    # "rejected SSL upgrade" rather than falling back.
     db_ssl      : bool = False
 
-
-    # Gates /admin/sessions, which lists every in-memory session. There's no
+    # ── Misc ──────────────────────────────────────────────────────────────────
+    # Gates /admin/sessions, which lists every in-memory session. There is no
     # admin role, so this is the gate.
     debug: bool = False
 
@@ -139,6 +150,17 @@ class Settings(BaseSettings):
             raise ValueError(f"BCRYPT_ROUNDS must be between 4 and 31, got {v}")
         return v
 
+    @field_validator("postmortem_timeout_seconds")
+    @classmethod
+    def postmortem_timeout_sane(cls, v: int) -> int:
+        # Below ~30s the pipeline can't finish even on a small log, so a low
+        # value would fail every upload rather than catching hung requests.
+        if v < 30:
+            raise ValueError(
+                f"POSTMORTEM_TIMEOUT_SECONDS must be at least 30, got {v}"
+            )
+        return v
+
     @model_validator(mode="after")
     def chunk_overlaps_less_than_chunk_size(self) -> "Settings":
         if self.rag_chunk_overlap >= self.rag_chunk_size:
@@ -157,41 +179,59 @@ class Settings(BaseSettings):
 
     @property
     def allowed_origins_list(self) -> list[str]:
-        """Parse comma-separated ALLOWED_ORIGINS string into a list."""
+        """Parse the comma-separated ALLOWED_ORIGINS string into a list."""
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
 
 
 settings = Settings()
 
-GROQ_API_KEY      = settings.groq_api_key
-MODEL_NAME        = settings.model_name
-CHAT_TEMPERATURE  = settings.chat_temperature
-RAG_TEMPERATURE   = settings.rag_temperature
-PM_TEMPERATURE    = settings.pm_temperature
-MAX_TOKEN_LIMIT   = settings.max_token_limit
-EMBED_MODEL       = settings.embed_model
+# ── Exports ───────────────────────────────────────────────────────────────────
+# Module-level constants so callers can `from config import X` rather than
+# threading the settings object through every function.
+
+# LLM
+GROQ_API_KEY     = settings.groq_api_key
+MODEL_NAME       = settings.model_name
+CHAT_TEMPERATURE = settings.chat_temperature
+RAG_TEMPERATURE  = settings.rag_temperature
+PM_TEMPERATURE   = settings.pm_temperature
+MAX_TOKEN_LIMIT  = settings.max_token_limit
+EMBED_MODEL      = settings.embed_model
+
+# RAG
 RAG_CHUNK_SIZE    = settings.rag_chunk_size
 RAG_CHUNK_OVERLAP = settings.rag_chunk_overlap
 RAG_TOP_K         = settings.rag_top_k
-PM_CHUNK_LINES    = settings.pm_chunk_lines
-PM_OVERLAP_LINES  = settings.pm_overlap_lines
-PM_TOP_K          = settings.pm_top_k
-SECRET_KEY        = settings.secret_key
-COOKIE_NAME       = settings.cookie_name
-COOKIE_MAX_AGE    = settings.cookie_max_age
-COOKIE_SECURE     = settings.cookie_secure
-COOKIE_SAMESITE   = settings.cookie_samesite
-BCRYPT_ROUNDS     = settings.bcrypt_rounds
-DATABASE_URL                     = settings.database_url
-DB_SCHEMA                        = settings.db_schema
-DB_SSL                           = settings.db_ssl 
-FAISS_STORE_DIR                  = settings.faiss_store_dir
+
+# Postmortem
+PM_CHUNK_LINES             = settings.pm_chunk_lines
+PM_OVERLAP_LINES           = settings.pm_overlap_lines
+PM_TOP_K                   = settings.pm_top_k
+POSTMORTEM_TIMEOUT_SECONDS = settings.postmortem_timeout_seconds
+
+# Auth / session
+SECRET_KEY      = settings.secret_key
+COOKIE_NAME     = settings.cookie_name
+COOKIE_MAX_AGE  = settings.cookie_max_age
+COOKIE_SECURE   = settings.cookie_secure
+COOKIE_SAMESITE = settings.cookie_samesite
+BCRYPT_ROUNDS   = settings.bcrypt_rounds
 SESSION_TTL_SECONDS              = settings.session_ttl_seconds
 SESSION_CLEANUP_INTERVAL_SECONDS = settings.session_cleanup_interval_seconds
-MAX_UPLOAD_SIZE_MB               = settings.max_upload_size_mb
-ALLOWED_ORIGINS                  = settings.allowed_origins_list
 
+# Database
+DATABASE_URL = settings.database_url
+DB_SCHEMA    = settings.db_schema
+DB_SSL       = settings.db_ssl
+
+# Storage / upload
+FAISS_STORE_DIR    = settings.faiss_store_dir
+MAX_UPLOAD_SIZE_MB = settings.max_upload_size_mb
+
+# Misc
+ALLOWED_ORIGINS = settings.allowed_origins_list
+DEBUG           = settings.debug
+
+# File type routing
 RAG_EXTENSIONS       = {".pdf", ".docx", ".doc", ".txt"}
 POSTMORTEM_EXTENSION = ".log"
-
-DEBUG = settings.debug

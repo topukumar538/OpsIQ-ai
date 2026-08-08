@@ -46,6 +46,10 @@ logger = logging.getLogger(__name__)
 # In-memory cache: token → session dict
 _sessions: dict[str, dict[str, Any]] = {}
 
+# The name a session row carries until something renames it. Used on restore to
+# work out whether the session has already been named — see _load_from_db.
+DEFAULT_SESSION_NAME = "New session"
+
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -57,7 +61,14 @@ def _make_in_memory_session(
     rag_llm,
     pm_llm,
     state  : dict[str, Any],
+    named  : bool = False,
 ) -> dict[str, Any]:
+    """
+    Build the in-memory session dict.
+
+    `named` defaults to False for brand-new sessions. Restores must pass the
+    real value — see _load_from_db.
+    """
     return {
         "db_id"        : db_id,
         "user_id"      : user_id,
@@ -69,7 +80,7 @@ def _make_in_memory_session(
         "lock"         : asyncio.Lock(),
         "last_accessed": time.time(),
         "last_db_touch": 0.0,     # when we last wrote last_accessed_at to the DB
-        "named"        : False,
+        "named"        : named,
     }
 
 
@@ -95,12 +106,12 @@ async def _load_from_db(token: str, user_id: int) -> Optional[dict[str, Any]]:
         state    = make_initial_state(chat_llm)
 
         # Restore mode + lock state from DB
-        state["mode"]       = row.mode
-        state["is_locked"]  = row.is_locked
+        state["mode"]      = row.mode
+        state["is_locked"] = row.is_locked
 
-        # Restore postmortem report — persisted so it survives server restarts.
-        # Without this, the report panel goes blank after Server redeploys
-        # even though the session mode and FAISS store restore correctly.
+        # Restore the postmortem report — persisted so it survives restarts.
+        # Without this the report panel goes blank after a redeploy even though
+        # the mode and FAISS store restore correctly.
         state["report_str"] = row.report_str or ""
 
         # Restore FAISS stores from disk
@@ -109,7 +120,7 @@ async def _load_from_db(token: str, user_id: int) -> Optional[dict[str, Any]]:
         if rag_store:
             state["rag_store"] = rag_store
         if pm_store:
-            state["pm_store"]  = pm_store
+            state["pm_store"] = pm_store
 
         # Restore LangChain memory
         memories = await restore_memory_from_db(db, row.id, chat_llm, rag_llm, pm_llm)
@@ -117,12 +128,21 @@ async def _load_from_db(token: str, user_id: int) -> Optional[dict[str, Any]]:
         state["rag_memory"]  = memories["rag_memory"]
         state["pm_memory"]   = memories["pm_memory"]
 
-        session = _make_in_memory_session(row.id, user_id, token, chat_llm, rag_llm, pm_llm, state) # type: ignore
+        # A restored session has already been named if its row holds anything
+        # other than the default. Without this, `named` came back as False and
+        # the next chat message renamed the session — "PM: incident.log" would
+        # become the text of whatever the user asked next.
+        already_named = bool(row.name) and row.name != DEFAULT_SESSION_NAME
+
+        session = _make_in_memory_session(
+            row.id, user_id, token, chat_llm, rag_llm, pm_llm, state,  # type: ignore
+            named=already_named,
+        )
         _sessions[token] = session
 
         logger.info(
-            "Restored session token=%s user=%d mode=%s from DB",
-            token, user_id, row.mode,
+            "Restored session token=%s user=%d mode=%s named=%s from DB",
+            token, user_id, row.mode, already_named,
         )
         return session
 
@@ -144,7 +164,10 @@ async def create_session(user_id: int, db: AsyncSession) -> dict[str, Any]:
     await db.commit()
     await db.refresh(row)
 
-    session = _make_in_memory_session(row.id, user_id, row.token, chat_llm, rag_llm, pm_llm, state) # type: ignore
+    session = _make_in_memory_session(
+        row.id, user_id, row.token, chat_llm, rag_llm, pm_llm, state,  # type: ignore
+        named=False,
+    )
     _sessions[row.token] = session
 
     logger.info("Created session token=%s for user=%d", row.token, user_id)
@@ -181,7 +204,7 @@ async def get_session(
 async def delete_session(token: str, user_id: int, db: AsyncSession) -> bool:
     """
     Delete a session from memory, Postgres, and FAISS disk.
-    Returns False if session not found or doesn't belong to user_id.
+    Returns False if the session isn't found or doesn't belong to user_id.
     """
     result = await db.execute(
         select(SessionModel).where(
@@ -204,7 +227,7 @@ async def delete_session(token: str, user_id: int, db: AsyncSession) -> bool:
 
 
 async def list_sessions(user_id: int, db: AsyncSession) -> list[dict]:
-    """Return all sessions for a user, newest first."""
+    """Return all sessions for a user, most recently used first."""
     result = await db.execute(
         select(SessionModel)
         .where(SessionModel.user_id == user_id)
@@ -247,17 +270,6 @@ async def update_session_mode(
     await db.commit()
 
 
-# async def update_session_faiss_path(
-#     token: str, user_id: int, path: str, db: AsyncSession
-# ) -> None:
-#     await db.execute(
-#         update(SessionModel)
-#         .where(SessionModel.token == token, SessionModel.user_id == user_id)
-#         .values(faiss_store_path=path)
-#     )
-#     await db.commit()
-
-
 async def save_report_to_db(
     token  : str,
     user_id: int,
@@ -265,14 +277,11 @@ async def save_report_to_db(
     db     : AsyncSession,
 ) -> None:
     """
-    Persist the postmortem report string to the sessions table.
+    Persist the postmortem report to the sessions table.
 
-    Why this exists:
-        report_str lives in session["state"] in memory but was never written
-        to the DB. After a server restart (deploy, crash, idle shutdown),
-        the session restores from DB — mode, is_locked, and FAISS all come back
-        correctly, but report_str was empty string, leaving the report panel blank.
-        Now it's saved here right after the postmortem pipeline completes.
+    report_str lives in session["state"] in memory. Without writing it here, a
+    restart would restore mode, is_locked and FAISS correctly but leave the
+    report panel blank.
     """
     await db.execute(
         update(SessionModel)
@@ -282,9 +291,9 @@ async def save_report_to_db(
     await db.commit()
 
 
-# How stale last_accessed_at is allowed to get before we bother writing.
-# The field feeds sidebar sorting and a 2-hour eviction threshold, so
-# minute-level precision is far more than enough.
+# How stale last_accessed_at is allowed to get before we bother writing. The
+# field feeds sidebar sorting and a 2-hour eviction threshold, so minute-level
+# precision is far more than enough.
 _TOUCH_INTERVAL_SECONDS = 60
 
 
@@ -314,7 +323,6 @@ async def touch_session(token: str, user_id: int, db: AsyncSession) -> None:
         .values(last_accessed_at=datetime.now(timezone.utc))
     )
     await db.commit()
-
 
 
 # ── Postmortem runner ─────────────────────────────────────────────────────────
@@ -378,6 +386,8 @@ async def run_postmortem_async(token: str, user_id: int, file_path: str) -> dict
     return await loop.run_in_executor(
         None, _run_postmortem_sync, token, user_id, file_path,
     )
+
+
 # ── TTL cleanup ───────────────────────────────────────────────────────────────
 
 def cleanup_expired_sessions() -> int:
@@ -394,7 +404,7 @@ def cleanup_expired_sessions() -> int:
 
 
 async def start_cleanup_task() -> None:
-    """Background task — started once in FastAPI lifespan, runs forever."""
+    """Background task — started once in the FastAPI lifespan, runs forever."""
     logger.info(
         "Session cleanup task started — TTL=%ds interval=%ds",
         SESSION_TTL_SECONDS, SESSION_CLEANUP_INTERVAL_SECONDS,

@@ -318,11 +318,9 @@ class ChatRequest(BaseModel):
 @limiter.limit("20/minute")
 @limiter.limit("100/day")
 # Per-minute stops a runaway loop; per-day stops one user draining the shared
-# Groq quota and leaving the app broken for everyone else. Counted by IP, so
-# users behind the same network share a budget — an accepted trade for not
-# needing per-user token accounting.
+# Groq quota and leaving the app broken for everyone else.
 async def chat(
-    request     : Request,      # must be first — slowapi reads the IP from it
+    request     : Request,      # must be first — slowapi reads the key from it
     req         : ChatRequest,
     current_user: User         = Depends(get_current_user),
     db          : AsyncSession = Depends(get_db),
@@ -397,10 +395,12 @@ async def chat(
                 logger.exception("Chat stream failed token=%s mode=%s", token, mode)
                 error_text = f"Response failed: {e}"
 
-            # Persist whatever we got — this runs on the error path too, so a
-            # partial answer the user already saw isn't lost from history.
-            if full:
-                try:
+            # Persist the turn. The human message is saved even when the model
+            # produced nothing — this used to sit behind `if full:`, so a
+            # failure before the first token lost the user's question entirely.
+            # They'd see an error, refresh, and find it gone.
+            try:
+                if full:
                     save_turn(memory, msg, full)
                     await save_message_to_db(db, db_id, "human", msg, mode)
                     await save_message_to_db(db, db_id, "ai", full, mode)
@@ -410,8 +410,13 @@ async def chat(
                         state.get("rag_memory"),
                         state.get("pm_memory"),
                     )
-                except Exception:
-                    logger.exception("Failed to persist turn token=%s", token)
+                else:
+                    # No tokens arrived. Save the question only — putting it
+                    # into LangChain memory would pair it with an empty answer
+                    # and poison the next summarisation.
+                    await save_message_to_db(db, db_id, "human", msg, mode)
+            except Exception:
+                logger.exception("Failed to persist turn token=%s", token)
 
             if error_text:
                 yield f"data: {json.dumps({'event': 'error', 'text': error_text})}\n\n"
@@ -434,7 +439,7 @@ async def chat(
 # Each upload runs embedding plus five LLM calls — by far the most expensive
 # endpoint. Twenty a day is well beyond any genuine use.
 async def upload(
-    request     : Request,      # must be first — slowapi reads the IP from it
+    request     : Request,      # must be first — slowapi reads the key from it
     file        : UploadFile   = File(...),
     current_user: User         = Depends(get_current_user),
     db          : AsyncSession = Depends(get_db),
@@ -541,7 +546,16 @@ async def upload(
 
                 try:
                     async with session["lock"]:
-                        result = await run_postmortem_async(token, uid, str(tmp_path))
+                        # Hard ceiling on the pipeline. It holds the session
+                        # lock across six LLM calls, and cleanup_expired_sessions
+                        # deliberately won't evict a locked session — so without
+                        # a timeout a hung request blocks this session and leaks
+                        # it from the cache for the process lifetime.
+                        from config import POSTMORTEM_TIMEOUT_SECONDS
+                        result = await asyncio.wait_for(
+                            run_postmortem_async(token, uid, str(tmp_path)),
+                            timeout=POSTMORTEM_TIMEOUT_SECONDS,
+                        )
                 finally:
                     # Always clean up the temp file, success or failure —
                     # never leave uploads sitting in /tmp.
@@ -566,13 +580,19 @@ async def upload(
                 # arrives as a wall of JSON. The full traceback still goes to
                 # the logs; the user gets something they can act on.
                 #
-                # No specific wait time is promised: Groq has both a per-minute
-                # and a per-day quota, and the error doesn't reliably say which
-                # one fired, so "wait a minute" would often be wrong.
+                # No specific wait time is promised for rate limits: Groq has
+                # both a per-minute and a per-day quota, and the error doesn't
+                # reliably say which one fired.
                 logger.exception("Postmortem pipeline failed for file=%s token=%s", fname, token)
 
                 err = str(e).lower()
-                if "rate limit" in err or "429" in err or "quota" in err:
+                if isinstance(e, asyncio.TimeoutError):
+                    # str(TimeoutError) is empty, so this must be checked by
+                    # type rather than by matching on the message.
+                    text = ("The analysis took too long and was stopped. This usually "
+                            "means the log is very large or the AI service is slow. "
+                            "Try a smaller file in a new session.")
+                elif "rate limit" in err or "429" in err or "quota" in err:
                     text = ("The AI service rate limit was reached. This can reset "
                             "within a minute, or take longer if the daily quota was "
                             "hit. Open a new session and try again once it clears.")
