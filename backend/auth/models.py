@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, Text, Boolean, ForeignKey, MetaData, UniqueConstraint, func
+from sqlalchemy import String, DateTime, Text, Boolean, ForeignKey, MetaData, UniqueConstraint, func, Integer
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from config import DATABASE_URL, DB_SCHEMA
@@ -31,6 +31,11 @@ class User(Base):
     created_at   : Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False,
     )
+    # Bumped on logout so previously issued tokens stop validating. Tokens are
+    # stateless — the server never stored them — so without a version number
+    # there is no way to invalidate one before it expires. A captured cookie
+    # would stay usable for the full 7 days even after the user logged out.
+    token_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     def __repr__(self) -> str:
         return f"<User id={self.id} username={self.username!r}>"

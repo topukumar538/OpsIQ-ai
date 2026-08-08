@@ -19,14 +19,21 @@ async def get_current_user(
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
-    user_id = verify_token(token)
-    if user_id is None:
+    parsed = verify_token(token)
+    if parsed is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
+
+    user_id, token_version = parsed
 
     result = await db.execute(select(User).where(User.id == user_id))
     user   = result.scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    # Reject tokens issued before the last logout. We already fetch the user
+    # on every request, so this check is free.
+    if token_version != user.token_version:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
 
     return user
 

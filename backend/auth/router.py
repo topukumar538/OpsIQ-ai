@@ -29,16 +29,15 @@ limiter = Limiter(key_func=get_remote_address)
 
 # ── Cookie helpers ────────────────────────────────────────────────────────────
 
-def _set_auth_cookie(response: JSONResponse, user_id: int) -> None:
+def _set_auth_cookie(response: JSONResponse, user_id: int, token_version: int) -> None:
     response.set_cookie(
         key=COOKIE_NAME,
-        value=make_token(user_id),
+        value=make_token(user_id, token_version),
         max_age=COOKIE_MAX_AGE,
         httponly=True,
         secure=COOKIE_SECURE,
         samesite=COOKIE_SAMESITE,
     )
-
 
 def _clear_auth_cookie(response: JSONResponse) -> None:
     response.delete_cookie(
@@ -106,7 +105,7 @@ async def signup(
         content={"id": user.id, "username": user.username, "email": user.email},
         status_code=status.HTTP_201_CREATED,
     )
-    _set_auth_cookie(response, user.id)
+    _set_auth_cookie(response, user.id, user.token_version)
     return response
 
 
@@ -129,16 +128,26 @@ async def login(
         )
 
     response = JSONResponse(content={"id": user.id, "username": user.username, "email": user.email})
-    _set_auth_cookie(response, user.id)
+    _set_auth_cookie(response, user.id, user.token_version)
     return response
 
 
 @router.post("/logout")
-async def logout() -> JSONResponse:
+async def logout(
+    current_user: User         = Depends(get_current_user),
+    db          : AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    """
+    Log out everywhere. Bumping token_version invalidates every token issued
+    to this user — clearing the cookie alone only removed it from this
+    browser, leaving a captured copy usable for the remaining 7 days.
+    """
+    current_user.token_version += 1
+    await db.commit()
+
     response = JSONResponse(content={"status": "logged out"})
     _clear_auth_cookie(response)
     return response
-
 
 @router.get("/me")
 async def me(current_user: User = Depends(get_current_user)) -> dict:

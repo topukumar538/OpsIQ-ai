@@ -10,7 +10,7 @@ from typing import AsyncGenerator
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-from fastapi import FastAPI, UploadFile, File, Header, Depends, HTTPException
+from fastapi import FastAPI, UploadFile, File, Header, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse, RedirectResponse
 from pydantic import BaseModel, Field
@@ -319,7 +319,9 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=32_000)
 
 @app.post("/chat")
+@limiter.limit("20/minute")
 async def chat(
+    request     : Request,
     req         : ChatRequest,
     current_user: User         = Depends(get_current_user),
     db          : AsyncSession = Depends(get_db),
@@ -421,7 +423,11 @@ async def chat(
 # ── Upload ────────────────────────────────────────────────────────────────────
 
 @app.post("/upload")
+@limiter.limit("10/minute")
+# Why 10/minute: an upload runs the full embedding + 5-call postmortem
+# pipeline. Nobody legitimately uploads more than a few files a minute.
 async def upload(
+    request     : Request, 
     file        : UploadFile   = File(...),
     current_user: User         = Depends(get_current_user),
     db          : AsyncSession = Depends(get_db),
