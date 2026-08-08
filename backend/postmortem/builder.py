@@ -1,11 +1,11 @@
 # Location: backend/postmortem/builder.py
+from functools import lru_cache
 from typing import Any
-
-from core.retriever import get_embeddings
 
 from langgraph.graph import StateGraph, END, START
 
 from core.faiss_store import save_store
+from core.retriever import get_embeddings
 from postmortem.ingest import read_log, build_store
 from postmortem.state import PostmortemState
 from postmortem.nodes.log_analyzer import log_analyzer
@@ -15,7 +15,18 @@ from postmortem.nodes.remediation import remediation
 from postmortem.nodes.report_summarizer import report_summarizer
 
 
+@lru_cache(maxsize=1)
 def build_postmortem_graph():
+    """
+    Compiled once and reused.
+
+    The graph holds no session or log data — it is pure structure ("node A
+    feeds node B"), identical on every run, so rebuilding and recompiling it
+    per upload was wasted work. Log data is passed in at .invoke().
+
+    START fans out to node_log and node_timeline, which run concurrently;
+    both must finish before node_root_cause begins.
+    """
     graph = StateGraph(PostmortemState)
 
     graph.add_node("node_log",               log_analyzer)
@@ -46,8 +57,8 @@ def run_postmortem(
     Read a log file, build the FAISS store, run the analysis graph,
     persist the store to disk, and return results for the session state.
     """
-    raw_log = read_log(log_path)
-    embeddings = get_embeddings()  # only once
+    raw_log    = read_log(log_path)
+    embeddings = get_embeddings()      # lru_cached — loaded once per process
     store, error_counts = build_store(raw_log, llm, embeddings)
 
     pm_state = build_postmortem_graph().invoke({
@@ -63,11 +74,17 @@ def run_postmortem(
         "report_summary":    "",
     })
 
+    # Saved only after the graph succeeds. If a node fails, /upload's DB writes
+    # never run either — so a store on disk here would be restored into memory
+    # but unreachable, since /chat only queries pm_store when mode is
+    # "postmortem" and mode stays "chat" after a failure.
     save_store(store, user_id, session_token, "pm")
 
     return {
         "pm_store":       store,
-        "report_str":     pm_state["report_str"],
+        # .get() rather than [] — a missing key would raise after all five LLM
+        # calls had already been paid for.
+        "report_str":     pm_state.get("report_str", ""),
         "report_summary": pm_state.get("report_summary", ""),
         "error_counts":   error_counts,
     }
