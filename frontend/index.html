@@ -141,11 +141,10 @@
   /* streaming state — pre-wrap so newlines render during token-by-token stream */
   .message-inner.streaming { white-space: pre-wrap; }
 
-  /* change the default from pre-wrap to normal */
   .message-inner {
     padding: 12px 16px; border-radius: var(--radius);
     font-size: 14px; line-height: 1.7;
-    white-space: normal;   /* ← was pre-wrap, now normal */
+    white-space: normal;
   }
   .user .message-inner { background: var(--user-msg); color: var(--text); }
   .ai   .message-inner { background: var(--ai-msg); color: var(--text); border: 1px solid var(--border); }
@@ -262,7 +261,7 @@
     #report-panel { height: 180px; }
   }
 
-    /* Typing indicator — three bouncing dots shown while LLM streams */
+  /* Typing indicator — three bouncing dots shown while waiting for tokens */
   .typing-indicator {
     display: inline-flex; align-items: center; gap: 4px; padding: 4px 0;
   }
@@ -295,7 +294,7 @@
   <div id="sidebar-footer">
     <div class="avatar" id="user-avatar">?</div>
     <span id="user-email">Loading...</span>
-    <button id="logout-btn" onclick="doLogout()">Sign out</button>
+    <button id="logout-btn" onclick="confirmLogout()">Sign out</button>
   </div>
 </div>
 
@@ -320,7 +319,6 @@
 
   <div id="chat-content" style="display:none; flex:1; flex-direction:column; overflow:hidden;">
     <div id="chat-area">
-      <!-- Load more button sits at the very top of the message list -->
       <div id="load-more-wrap">
         <button id="load-more-btn" onclick="loadMoreMessages()">↑ Load older messages</button>
       </div>
@@ -374,6 +372,23 @@
   </div>
 </div>
 
+<!-- ── Logout modal ───────────────────────────────────────────────────────── -->
+<div id="logout-modal" style="
+  display:none; position:fixed; inset:0; z-index:1000;
+  background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);
+  align-items:center; justify-content:center;">
+  <div style="background:#1e2535; border:1px solid #2a3147; border-radius:12px; padding:24px 28px; max-width:360px; width:90%; margin:0 16px;">
+    <div style="font-size:15px; font-weight:600; color:#e2e8f0; margin-bottom:8px;">Sign out?</div>
+    <div style="font-size:13px; color:#64748b; margin-bottom:24px; line-height:1.6;">
+      You'll be signed out on all devices. Your sessions and reports are kept and will be here when you sign back in.
+    </div>
+    <div style="display:flex; gap:10px; justify-content:flex-end;">
+      <button onclick="closeLogoutModal()" style="padding:8px 18px; border-radius:8px; border:1px solid #2a3147; background:transparent; color:#e2e8f0; font-size:13px; cursor:pointer;">Cancel</button>
+      <button onclick="doLogout()" style="padding:8px 18px; border-radius:8px; border:none; background:#4f8ef7; color:#fff; font-size:13px; font-weight:600; cursor:pointer;">Sign out</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
 let activeToken        = null;
@@ -381,7 +396,7 @@ let isStreaming        = false;
 let reportText         = "";
 let allSessions        = [];
 let acceptedExtensions = new Set([".pdf", ".docx", ".doc", ".txt", ".log"]);
-let maxUploadSizeMB    = 50;
+let maxUploadSizeMB    = 10;     // overwritten by /upload/extensions on load
 let currentMode        = "chat";
 let sidebarCollapsed   = false;
 let oldestMessageId    = null;   // pagination cursor for load more
@@ -449,17 +464,30 @@ function maybeCloseSidebarOnMobile() {
 }
 
 // ── Logout ────────────────────────────────────────────────────────────────────
+// Confirmed, because logout now bumps token_version server-side and signs the
+// user out everywhere — not just this browser.
+function confirmLogout() {
+  document.getElementById("logout-modal").style.display = "flex";
+}
+function closeLogoutModal() {
+  document.getElementById("logout-modal").style.display = "none";
+}
 async function doLogout() {
+  closeLogoutModal();
   try { await fetch("/auth/logout", { method: "POST", credentials: "include" }); } finally {
     localStorage.removeItem("opsiq_active_token");
     window.location.href = "/login";
   }
 }
+document.getElementById("logout-modal").addEventListener("click", function(e) {
+  if (e.target === this) closeLogoutModal();
+});
 
 // ── Sessions ──────────────────────────────────────────────────────────────────
 async function loadSessions() {
   try {
-    const res  = await fetch("/sessions", { credentials: "include" });
+    const res = await fetch("/sessions", { credentials: "include" });
+    if (res.status === 401) { window.location.href = "/login"; return; }
     const data = await res.json();
     allSessions = data.sessions || [];
     renderSessions();
@@ -490,7 +518,8 @@ function modeIcon(mode) {
 }
 
 async function newSession() {
-  const res  = await fetch("/session", { method: "POST", credentials: "include" });
+  const res = await fetch("/session", { method: "POST", credentials: "include" });
+  if (res.status === 401) { window.location.href = "/login"; return; }
   const data = await res.json();
   await loadSessions();
   await switchSession(data.token);
@@ -565,43 +594,8 @@ async function switchSession(token) {
 
   updateLoadMoreBtn();
 }
+
 // ── Message pagination ────────────────────────────────────────────────────────
-async function loadInitialMessages() {
-  oldestMessageId = null;
-  hasMoreMessages = false;
-
-  try {
-    const res  = await fetch("/session/messages", {
-      headers    : { "x-session-token": activeToken },
-      credentials: "include",
-    });
-    const data = await res.json();
-
-    removeEmptyState();
-
-    if (data.messages && data.messages.length) {
-      for (const m of data.messages) {
-        appendMessage(m.role === "human" ? "user" : "ai", m.content, m.id);
-      }
-      oldestMessageId = data.oldest_id;
-      hasMoreMessages = data.has_more;
-      scrollToBottom();
-    } else {
-      const area = document.getElementById("chat-area");
-      area.insertAdjacentHTML("beforeend",
-        '<div id="empty-state"><h2>Session loaded</h2><p>Continue your conversation or upload a file.</p></div>'
-      );
-    }
-  } catch {
-    const area = document.getElementById("chat-area");
-    area.insertAdjacentHTML("beforeend",
-      '<div id="empty-state"><h2>Session loaded</h2><p>Continue your conversation or upload a file.</p></div>'
-    );
-  }
-
-  updateLoadMoreBtn();
-}
-
 async function loadMoreMessages() {
   if (!activeToken || !hasMoreMessages || !oldestMessageId) return;
 
@@ -610,10 +604,11 @@ async function loadMoreMessages() {
   btn.disabled    = true;
 
   try {
-    const res  = await fetch(
+    const res = await fetch(
       `/session/messages?before=${oldestMessageId}&limit=20`,
       { headers: { "x-session-token": activeToken }, credentials: "include" }
     );
+    if (res.status === 401) { window.location.href = "/login"; return; }
     const data = await res.json();
 
     if (data.messages && data.messages.length) {
@@ -627,7 +622,7 @@ async function loadMoreMessages() {
         wrap.insertAdjacentElement("afterend", div);
       }
 
-      // Restore scroll so user stays in place
+      // Restore scroll so the user stays in place
       area.scrollTop = area.scrollHeight - scrollBefore;
 
       oldestMessageId = data.oldest_id;
@@ -665,7 +660,10 @@ async function confirmDelete() {
   closeDeleteModal();
   if (!token) return;
 
-  await fetch("/session", { method: "DELETE", headers: { "x-session-token": token }, credentials: "include" });
+  const res = await fetch("/session", {
+    method: "DELETE", headers: { "x-session-token": token }, credentials: "include",
+  });
+  if (res.status === 401) { window.location.href = "/login"; return; }
 
   if (activeToken === token) {
     activeToken = null;
@@ -719,6 +717,8 @@ function autoResize(el) {
 // ── SSE reader ────────────────────────────────────────────────────────────────
 // One reader for both /chat and /upload. Every event is JSON:
 //   {event:"token"|"progress"|"report"|"error"|"done", text?, ...}
+// JSON framing matters: a raw "data: {text}" frame breaks apart at every blank
+// line in the model's markdown, which is why the stream used to be discarded.
 async function readSSE(res, onEvent) {
   const reader = res.body.getReader();
   const dec    = new TextDecoder();
@@ -740,7 +740,6 @@ async function readSSE(res, onEvent) {
     }
   }
 }
-
 
 // ── Typewriter ────────────────────────────────────────────────────────────────
 // Groq streams at 500+ tok/s, so chunks land faster than the eye can track and
@@ -810,7 +809,15 @@ async function sendMessage() {
       body: JSON.stringify({ message: msg }),
     });
 
+    // Token was revoked (logout elsewhere) or expired.
     if (res.status === 401) { window.location.href = "/login"; return; }
+
+    // Rate limited — without this the failure looks like a broken app.
+    if (res.status === 429) {
+      innerEl.classList.remove("streaming");
+      innerEl.textContent = "⏳ Too many messages. Please wait a moment and try again.";
+      return;
+    }
 
     // Resolves once the typewriter has painted everything it was given.
     let resolvePainted;
@@ -856,6 +863,7 @@ async function sendMessage() {
   await loadSessions();
   renderSessions();
 }
+
 // ── Upload ────────────────────────────────────────────────────────────────────
 function validateFile(file) {
   // A dotless filename like "README" used to become ".readme" — split(".")
@@ -903,6 +911,12 @@ async function handleFileUpload(input) {
 
     if (res.status === 401) { window.location.href = "/login"; return; }
 
+    if (res.status === 429) {
+      document.getElementById("progress-bar").classList.remove("visible");
+      appendMessage("ai", "⏳ Too many uploads. Please wait a moment.");
+      return;
+    }
+
     // Decide by what the server actually sent, not by the filename.
     // A .log upload can still come back as JSON (locked, duplicate) —
     // guessing from the extension silently swallowed those messages.
@@ -932,10 +946,14 @@ async function handleFileUpload(input) {
       else                             appendMessage("ai", `⚠️ ${data.message}`);
     }
 
-    const modeRes  = await fetch("/session/mode", { headers: { "x-session-token": activeToken }, credentials: "include" });
-    const modeData = await modeRes.json();
-    currentMode    = modeData.mode;
-    updateModeBadge(modeData.mode);
+    const modeRes = await fetch("/session/mode", {
+      headers: { "x-session-token": activeToken }, credentials: "include",
+    });
+    if (modeRes.ok) {
+      const modeData = await modeRes.json();
+      currentMode    = modeData.mode;
+      updateModeBadge(modeData.mode);
+    }
     await loadSessions(); renderSessions();
 
   } catch (e) {
@@ -949,21 +967,30 @@ async function handleFileUpload(input) {
 }
 
 // ── Markdown renderer ─────────────────────────────────────────────────────────
+// escHtml runs first, so no user or model content can inject HTML.
 function renderMarkdown(text) {
   let html = escHtml(text);
-  // code blocks
-  html = html.replace(/```[\w]*\n?([\s\S]*?)```/g, '<pre><code>$1</code></pre>');
-  // inline code
+
+  // Pull code blocks out before anything else touches them, so the newline
+  // pass below can't inject <br/> inside a <pre>. Placeholders go back in
+  // at the end.
+  const blocks = [];
+  html = html.replace(/```[\w]*\n?([\s\S]*?)```/g, (_, code) => {
+    blocks.push(code);
+    return `\u0000CODEBLOCK${blocks.length - 1}\u0000`;
+  });
+
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  // bold
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  // italic
   html = html.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
-  // bullet points
   html = html.replace(/^[*\-] (.+)$/gm, '<li>$1</li>');
   html = html.replace(/(<li>[\s\S]*?<\/li>)+/g, '<ul>$&</ul>');
-  // line breaks (skip inside pre blocks)
-  html = html.replace(/(?!<\/?(pre|code|ul|li)[^>]*>)\n/g, '<br/>');
+  html = html.replace(/\n/g, '<br/>');
+
+  // Restore code blocks with their newlines intact.
+  html = html.replace(/\u0000CODEBLOCK(\d+)\u0000/g,
+    (_, i) => `<pre><code>${blocks[Number(i)]}</code></pre>`);
+
   return html;
 }
 
