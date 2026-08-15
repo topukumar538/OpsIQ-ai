@@ -16,7 +16,7 @@ An AI incident-analysis tool. Upload a production log and get a structured postm
 
 Built with FastAPI, LangGraph, FAISS, and Postgres.
 
-🔗 **[Live Demo](https://huggingface.co/spaces/topukumar/OpsIQ)**
+🔗 **[Live Demo](https://topukumar-opsiq.hf.space)**
 
 ---
 
