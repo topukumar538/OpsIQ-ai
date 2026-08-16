@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select as sa_select
 
 from auth.database import init_db, get_db
 from auth.dependencies import get_current_user
@@ -649,6 +650,15 @@ async def upload(
                             rag_memory.chat_memory.add_message(m)
                     state["rag_memory"] = rag_memory
 
+        except ValueError as e:
+            # _load_and_chunk() raises this with a message written for the user
+            # — most often a scanned PDF with no text layer. Return it as-is
+            # rather than wrapping it in "Failed to process file", which buries
+            # the one sentence telling them what to do about it. Not logged as
+            # an exception: a user uploading an unreadable file is expected
+            # input, not a fault.
+            logger.info("RAG ingestion rejected file=%s token=%s: %s", fname, token, e)
+            return {"status": "error", "message": str(e)}
         except Exception as e:
             logger.exception("RAG ingestion failed for file=%s token=%s", fname, token)
             return {"status": "error", "message": f"Failed to process file: {e}"}
@@ -658,7 +668,7 @@ async def upload(
         await update_session_mode(token, uid, RAG, db)
 
         # Auto-name from the first uploaded filename if no files yet
-        from sqlalchemy import select as sa_select
+        
         existing = await db.execute(
             sa_select(SessionFile).where(SessionFile.session_id == db_id)
         )
