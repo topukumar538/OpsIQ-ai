@@ -627,13 +627,13 @@ async def upload(
                 existing_store = state.get("rag_store")
                 if existing_store is None:
                     store = await asyncio.get_running_loop().run_in_executor(
-                        None, build_rag_store, str(tmp_path), uid, token,
+                        None, build_rag_store, str(tmp_path), uid, token, fname,
                     )
                     state["rag_store"] = store
                     state["mode"]      = RAG
                 else:
                     store = await asyncio.get_running_loop().run_in_executor(
-                        None, add_to_store, existing_store, str(tmp_path), uid, token,
+                        None, add_to_store, existing_store, str(tmp_path), uid, token, fname,
                     )
 
                 # Seed RAG memory with the chat history so switching modes

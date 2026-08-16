@@ -77,42 +77,23 @@ def _load_documents(file_path: str):
     return loader.load()
 
 
-def _load_and_chunk(file_path: str) -> list:
-    """
-    Load a document and split it into chunks, refusing to return an empty list.
-
-    A scanned PDF is a sequence of page images with no text layer, so pypdf
-    extracts nothing and the splitter produces zero chunks. Passing that empty
-    list to FAISS.from_documents() raises "list index out of range" — FAISS
-    embeds the texts and reads embeddings[0] to determine the vector dimension.
-    That error names neither the file nor the cause, so the failure surfaced to
-    the user as an internal crash four steps away from the real problem.
-
-    Whitespace-only chunks are dropped before the check. Some PDFs yield
-    page_content of "\\n\\n   " rather than "" — technically non-empty, so it
-    survives the splitter and gets embedded as a meaningless vector. That is
-    worse than the crash: ingestion appears to succeed, retrieval silently
-    returns nothing useful, and the user has no way to know their document was
-    never really loaded.
-    """
+def _load_and_chunk(file_path: str, display_name: str | None = None) -> list:
+    name   = display_name or Path(file_path).name
     docs   = _load_documents(file_path)
     chunks = _splitter.split_documents(docs)
     chunks = [c for c in chunks if c.page_content.strip()]
 
     if not chunks:
         raise ValueError(
-            f"No readable text found in '{Path(file_path).name}'. "
+            f"No readable text found in '{name}'. "
             "If this is a scanned PDF it contains page images rather than "
             "text, so it cannot be indexed. Try a text-based document instead."
         )
     return chunks
 
 
-def build_rag_store(
-    file_path : str,
-    user_id   : int,
-    token     : str,
-) -> FAISS:
+def build_rag_store(file_path, user_id, token, display_name=None) -> FAISS:
+    
     """
     Load a document, chunk it, embed it, build a fresh FAISS store
     and persist to disk immediately.
@@ -123,7 +104,7 @@ def build_rag_store(
     Raises ValueError with a user-facing message when the file yields no
     extractable text — the route surfaces it as-is rather than wrapping it.
     """
-    chunks = _load_and_chunk(file_path)
+    chunks = _load_and_chunk(file_path, display_name)
     store  = FAISS.from_documents(chunks, get_embeddings())
     save_store(store, user_id, token, "rag")
     logger.info(
@@ -133,12 +114,7 @@ def build_rag_store(
     return store
 
 
-def add_to_store(
-    store     : FAISS,
-    file_path : str,
-    user_id   : int,
-    token     : str,
-) -> FAISS:
+def add_to_store(store, file_path, user_id, token, display_name=None) -> FAISS:
     """
     Merge a new document into an existing FAISS store and re-persist.
 
@@ -152,7 +128,7 @@ def add_to_store(
     text leaves the caller's existing store untouched. The user keeps whatever
     they had already loaded rather than losing the session to a bad upload.
     """
-    chunks    = _load_and_chunk(file_path)
+    chunks = _load_and_chunk(file_path, display_name)
     new_store = FAISS.from_documents(chunks, get_embeddings())
     store.merge_from(new_store)
     save_store(store, user_id, token, "rag")
