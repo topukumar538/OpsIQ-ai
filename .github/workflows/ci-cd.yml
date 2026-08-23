@@ -39,26 +39,64 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Cache Docker layers
-        uses: actions/cache@v4
+      - name: Pre-build image with GitHub Actions cache
+        # docker compose build does NOT read from actions/cache on its own —
+        # that earlier attempt was a no-op. This step builds the same
+        # Dockerfile explicitly with BuildKit's GitHub Actions cache backend
+        # (cache-to/cache-from: type=gha), which actually persists across
+        # runs. `load: true` puts the result into the local Docker daemon,
+        # so the `docker compose build` below hits local layer cache instead
+        # of reinstalling torch/sentence-transformers/faiss from scratch.
+        # First run is still slow (nothing to reuse yet) — every run after
+        # this one should be dramatically faster.
+        uses: docker/build-push-action@v5
         with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile', 'requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: opsiq-ai-app:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Build app + tests images
         # Both the "app" and "tests" services in docker-compose.yml build
-        # from the same root Dockerfile — this is the actual artifact that
-        # will be deployed, not a stand-in.
+        # from the same root Dockerfile. The layers were just warmed above,
+        # so this should resolve almost entirely from local cache.
         env:
           DOCKER_BUILDKIT: "1"
           COMPOSE_DOCKER_CLI_BUILD: "1"
         run: docker compose --profile test build
 
+      - name: Start Postgres
+        # Bring up just the db service and wait for its healthcheck
+        # (pg_isready) to pass before touching it — starting a container
+        # doesn't mean Postgres inside it is ready to accept connections yet.
+        run: |
+          docker compose up -d db
+          echo "Waiting for Postgres to become healthy..."
+          timeout 60s bash -c '
+            until [ "$(docker inspect -f "{{.State.Health.Status}}" opsiq_db)" = "healthy" ]; do
+              sleep 2
+            done
+          '
+          echo "Postgres is healthy."
+
+      - name: Create opsiq_test database
+        # POSTGRES_DB only creates "opsiq" (the app's real database). Tests
+        # need a separate "opsiq_test" database so TRUNCATE calls in
+        # test_auth.py never touch real data. \gexec makes this idempotent —
+        # safe to run even if the database already exists from a previous
+        # step in this same job.
+        run: |
+          docker compose exec -T db psql -U opsiq -d opsiq -c \
+            "SELECT 'CREATE DATABASE opsiq_test' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'opsiq_test')\gexec"
+
       - name: Run full test suite against the built image
-        # Starts db automatically (depends_on: service_healthy) and runs
-        # `pytest tests/ -v` inside the tests container — same command as
+        # `docker compose run` reuses the db container already running from
+        # the step above (depends_on: service_healthy just confirms it's
+        # ready) rather than starting a second one. Runs `pytest tests/ -v`
+        # inside the tests container — same command as
         # `docker compose --profile test run --rm tests` locally. Covers
         # unit tests, live-Postgres auth tests, and the cached validation
         # suite in one pass.
@@ -69,12 +107,13 @@ jobs:
         run: docker compose down -v
 
   # ── Deploy to Hugging Face Spaces ─────────────────────────────────────────
-  # Only on a real push to main (never on PRs — forks/PRs shouldn't be able
-  # to trigger a deploy), and only once the build-and-test job has passed.
+  # DISABLED FOR NOW — focusing on getting CI green first. To re-enable,
+  # delete the "if: false &&" part below so the job goes back to running
+  # automatically on every push to master.
   deploy:
     name: Deploy to Hugging Face Space
     needs: build-and-test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: false && github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
