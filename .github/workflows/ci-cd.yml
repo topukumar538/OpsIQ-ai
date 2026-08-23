@@ -1,0 +1,85 @@
+name: CI/CD
+
+# Build the real Docker image first, then run the whole test suite inside it
+# against a real Postgres — the same command used locally
+# (`docker compose --profile test run --rm tests`). Testing the built image
+# rather than a bare-runner install is the point: it catches Dockerfile /
+# dependency-layer breakage that a plain `pip install` step would miss, and
+# it's the exact artifact that would go on to run on Hugging Face Spaces.
+on:
+  push:
+    branches: [master] 
+  pull_request:
+    branches: [master]  
+
+jobs:
+
+  # ── Build + full test suite ───────────────────────────────────────────────
+  build-and-test:
+    name: Build image & run tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env for CI
+        # docker-compose.yml requires env_file: .env to exist on both the
+        # app and tests services. Real GROQ_API_KEY isn't needed — test_
+        # validation.py falls back to its disk cache, and no other test
+        # calls Groq live. SECRET_KEY just needs to pass Settings'
+        # validator (>=32 chars, no placeholder text, no spaces/quotes).
+        run: |
+          cat <<EOF > .env
+          GROQ_API_KEY=${{ secrets.GROQ_API_KEY || 'gsk_ci_placeholder_not_a_real_key' }}
+          SECRET_KEY=${{ secrets.SECRET_KEY || 'ci0000000000000000000000000000000000placeholder' }}
+          POSTGRES_USER=opsiq
+          POSTGRES_PASSWORD=opsiq_ci_password
+          POSTGRES_DB=opsiq
+          EOF
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile', 'requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build app + tests images
+        env:
+          DOCKER_BUILDKIT: "1"
+          COMPOSE_DOCKER_CLI_BUILD: "1"
+        run: docker compose --profile test build
+
+      - name: Run full test suite against the built image
+        run: docker compose --profile test run --rm tests
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
+
+  # ── Deploy to Hugging Face Spaces ─────────────────────────────────────────
+  deploy:
+    name: Deploy to Hugging Face Space
+    needs: build-and-test
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' 
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_USERNAME: ${{ secrets.HF_USERNAME }}
+          HF_SPACE_NAME: ${{ secrets.HF_SPACE_NAME }}
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+
+          git remote add space "https://${HF_USERNAME}:${HF_TOKEN}@huggingface.co/spaces/${HF_USERNAME}/${HF_SPACE_NAME}"
+
+          git push space "HEAD:main" --force
