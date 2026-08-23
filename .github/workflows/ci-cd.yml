@@ -8,9 +8,9 @@ name: CI/CD
 # it's the exact artifact that would go on to run on Hugging Face Spaces.
 on:
   push:
-    branches: [master] 
+    branches: [master]
   pull_request:
-    branches: [master]  
+    branches: [master]
 
 jobs:
 
@@ -48,12 +48,20 @@ jobs:
             ${{ runner.os }}-buildx-
 
       - name: Build app + tests images
+        # Both the "app" and "tests" services in docker-compose.yml build
+        # from the same root Dockerfile — this is the actual artifact that
+        # will be deployed, not a stand-in.
         env:
           DOCKER_BUILDKIT: "1"
           COMPOSE_DOCKER_CLI_BUILD: "1"
         run: docker compose --profile test build
 
       - name: Run full test suite against the built image
+        # Starts db automatically (depends_on: service_healthy) and runs
+        # `pytest tests/ -v` inside the tests container — same command as
+        # `docker compose --profile test run --rm tests` locally. Covers
+        # unit tests, live-Postgres auth tests, and the cached validation
+        # suite in one pass.
         run: docker compose --profile test run --rm tests
 
       - name: Tear down
@@ -61,14 +69,18 @@ jobs:
         run: docker compose down -v
 
   # ── Deploy to Hugging Face Spaces ─────────────────────────────────────────
+  # Only on a real push to main (never on PRs — forks/PRs shouldn't be able
+  # to trigger a deploy), and only once the build-and-test job has passed.
   deploy:
     name: Deploy to Hugging Face Space
     needs: build-and-test
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master' 
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          # Full history, not a shallow clone — a shallow push to the HF
+          # remote can fail or produce a broken ref.
           fetch-depth: 0
 
       - name: Push to Hugging Face Space
@@ -82,4 +94,8 @@ jobs:
 
           git remote add space "https://${HF_USERNAME}:${HF_TOKEN}@huggingface.co/spaces/${HF_USERNAME}/${HF_SPACE_NAME}"
 
+          # GitHub is the single source of truth; the Space's git history is
+          # just a deploy target and can legitimately diverge (e.g. after a
+          # manual push from a laptop, or the Space's own first commit).
+          # Force-push is intentional here, not a workaround for a mistake.
           git push space "HEAD:main" --force
