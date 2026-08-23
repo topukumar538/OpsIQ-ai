@@ -10,7 +10,6 @@ jobs:
   build-and-test:
     name: Build and Test
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,26 +24,12 @@ jobs:
           POSTGRES_DB=opsiq
           EOF
 
-      - name: Setup Docker
-        uses: docker/setup-buildx-action@v3
-
       - name: Build Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: false
-          load: true
-          tags: opsiq-ai-app:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build Compose services
         run: docker compose --profile test build
 
       - name: Start PostgreSQL
         run: |
           docker compose up -d db
-
           timeout 60s bash -c '
             until [ "$(docker inspect -f "{{.State.Health.Status}}" opsiq_db)" = "healthy" ]; do
               sleep 2
@@ -56,7 +41,6 @@ jobs:
           EXISTS=$(docker compose exec -T db \
             psql -U opsiq -d opsiq -tAc \
             "SELECT 1 FROM pg_database WHERE datname='opsiq_test'")
-
           if [ "$EXISTS" != "1" ]; then
             docker compose exec -T db \
               psql -U opsiq -d opsiq \
@@ -69,3 +53,26 @@ jobs:
       - name: Cleanup
         if: always()
         run: docker compose down -v
+
+  deploy:
+    name: Deploy to Hugging Face
+    needs: build-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Deploy to Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_USERNAME: ${{ secrets.HF_USERNAME }}
+          HF_SPACE_NAME: ${{ secrets.HF_SPACE_NAME }}
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+          git remote add space \
+            "https://${HF_USERNAME}:${HF_TOKEN}@huggingface.co/spaces/${HF_USERNAME}/${HF_SPACE_NAME}"
+          git push space HEAD:main --force
