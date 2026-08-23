@@ -53,7 +53,8 @@ Results are cached to disk, so the suite runs without a Groq key and without bur
 | Auth             | HMAC-SHA256 signed cookies + bcrypt   |
 | Rate limiting    | slowapi                               |
 | Frontend         | HTML + vanilla JS (SSE streaming)     |
-| Deployment       | Docker Compose                        |
+| CI/CD            | GitHub Actions → Hugging Face Spaces  |
+| Deployment       | Docker (dev: Docker Compose)          |
 
 ---
 
@@ -62,7 +63,7 @@ Results are cached to disk, so the suite runs without a Groq key and without bur
 ### Three conversation modes
 
 | Mode           | Trigger                 | What happens                                                            |
-| -------------- | ----------------------- | ----------------------------------------------------------------------- |
+| -------------- | ------------------------ | ------------------------------------------------------------------------ |
 | **Chat**       | Send a message          | Conversational Q&A with rolling memory summarisation                    |
 | **RAG**        | Upload PDF / DOCX / TXT | Document ingested into FAISS, answers grounded in its content           |
 | **Postmortem** | Upload `.log`           | Parallel LangGraph pipeline — errors, timeline, root cause, remediation |
@@ -193,22 +194,97 @@ cd backend
 pytest tests/ -v
 ```
 
-Six test files. `test_auth.py` needs Postgres and points at a separate `opsiq_test` database, created automatically by `docker/initdb/`. The rest are pure unit tests with no dependencies.
+Six test files. `test_auth.py` needs Postgres and points at a separate `opsiq_test` database. In CI this database is created automatically as part of the pipeline (see [CI/CD](#cicd) below). Running the full suite locally for the first time, create it once:
+
+```bash
+docker compose up -d db
+docker compose exec db psql -U opsiq -d opsiq -c "CREATE DATABASE opsiq_test"
+```
+
+The rest of the suite is pure unit tests with no dependencies:
 
 ```bash
 # no database needed
 pytest tests/test_tokens.py tests/test_router.py tests/test_ingest.py tests/test_config.py -v
 
-# needs Postgres
+# needs Postgres (and opsiq_test, created above)
 pytest tests/test_auth.py -v
 
 # accuracy validation — runs from cache, no API key needed
 pytest tests/test_validation.py -v
 ```
 
-Or run the whole suite in a container against the same image the app uses:
+Or run the whole suite in a container against the same image the app uses — this also creates `opsiq_test` itself, no manual step needed:
 
 ```bash
+docker compose --profile test build
+docker compose up -d db
+docker compose exec db psql -U opsiq -d opsiq -c "CREATE DATABASE opsiq_test"
+docker compose --profile test run --rm tests
+```
+
+---
+
+## CI/CD
+
+Every push to `master` builds the app, runs the full test suite against a real Postgres, and — if everything passes — deploys straight to the Hugging Face Space. Defined in `.github/workflows/ci-cd.yml`.
+
+```mermaid
+flowchart TD
+    A[Push to master] --> B[build-and-test job]
+
+    subgraph B[build-and-test job]
+        direction TB
+        B1[Build Docker image<br/>docker compose --profile test build]
+        B2[Start PostgreSQL<br/>wait for healthy]
+        B3[Create opsiq_test database<br/>if it doesn't already exist]
+        B4[Run full pytest suite<br/>inside the built container]
+        B1 --> B2 --> B3 --> B4
+    end
+
+    B4 -->|fail| STOP[Stop — nothing deploys]
+    B4 -->|pass| C[deploy job]
+
+    subgraph C[deploy job]
+        direction TB
+        C1[Force-push repo to<br/>Hugging Face's space remote]
+    end
+
+    C --> D[Hugging Face Space]
+
+    subgraph D[Hugging Face Space]
+        direction TB
+        D1[Detects new commit on main]
+        D2[Builds Dockerfile independently]
+        D3[Runs the container]
+        D1 --> D2 --> D3
+    end
+
+    D --> E[OpsIQ live at topukumar-opsiq.hf.space]
+
+    B4 -.always runs.-> CLEAN[Cleanup<br/>docker compose down -v]
+```
+
+**Why the image gets built twice.** CI's build is a rehearsal — it proves the `Dockerfile` and code work and runs all 123 tests against the result. Hugging Face's build is the real performance — it builds the same `Dockerfile` independently on its own infrastructure, and that's what actually serves traffic. Since both come from the identical commit, if CI passes, HF's build succeeding is effectively guaranteed.
+
+**`opsiq_test` is created directly in the workflow**, not via a local init script — a plain check-then-create in bash (`SELECT ... WHERE datname='opsiq_test'`, then `CREATE DATABASE` if missing) runs after Postgres reports healthy, before tests start. This keeps CI self-contained with no extra files to keep in sync.
+
+**Required GitHub secrets** (Settings → Secrets and variables → Actions):
+
+| Secret | Purpose |
+|---|---|
+| `HF_TOKEN` | Hugging Face access token with write access to the Space |
+| `HF_USERNAME` | Your HF username |
+| `HF_SPACE_NAME` | The Space's repo name |
+| `SECRET_KEY` *(optional)* | Falls back to a CI-only placeholder if unset |
+| `GROQ_API_KEY` *(optional)* | Not required — `test_validation.py` runs from its disk cache |
+
+Runtime secrets for the *live* app (`DATABASE_URL` pointing at the production database, real `SECRET_KEY`, real `GROQ_API_KEY`) are configured separately, directly in the Space's own **Settings → Variables and secrets** on huggingface.co — this workflow only pushes code, it never touches those.
+
+**Run the same checks locally** before pushing:
+
+```bash
+docker compose --profile test build
 docker compose --profile test run --rm tests
 ```
 
@@ -218,11 +294,13 @@ docker compose --profile test run --rm tests
 
 ```
 OpsIQ-ai/
+├── .github/
+│   └── workflows/
+│       └── ci-cd.yml            # build, test, deploy to Hugging Face on push to master
 ├── Dockerfile                   # at the root — Hugging Face Spaces requires it here
 ├── docker-compose.yml           # app + Postgres + test runner
 ├── requirements.txt
 ├── .env.example
-├── docker/initdb/               # creates opsiq_test on first volume init
 ├── backend/
 │   ├── main.py                  # FastAPI app, routes, SSE streaming
 │   ├── config.py                # Pydantic settings with validation
@@ -354,6 +432,8 @@ session_messages
 
 **Request-count rate limits, not token accounting.** The Groq quota is shared across everyone using the deployment, so a per-user cap stops one person exhausting it. Counting requests keeps this to two decorators rather than a usage-tracking table; per-user token accounting would be the next step if the demo saw real traffic. Limits are keyed by IP, so users behind the same network share a budget.
 
+**CI builds the Docker image before testing, not after.** Both `docker compose --profile test build` and the test run itself use the same root `Dockerfile` your Hugging Face Space builds from. Testing that exact artifact — not a bare-runner `pip install` — catches Dockerfile and dependency-layer breakage before it ever reaches production, and mirrors the local dev workflow exactly.
+
 ---
 
 ## Known Limitations
@@ -365,6 +445,8 @@ session_messages
 **Rate limits are per IP, not per user.** Two people on the same network share a budget. Adequate for a demo; per-account limits would need usage tracking.
 
 **Upload limit is 10MB** — sized by LLM processing time rather than storage. A larger log would embed thousands of chunks and exhaust the Groq quota before finishing.
+
+**CI has no caching.** `docker compose --profile test build` rebuilds every dependency layer — including torch and the baked-in embeddings model — from scratch on every run, so builds are consistently slow rather than fast after the first. Traded for a simpler workflow file; re-adding `docker/build-push-action` with a `type=gha` cache would bring this back down significantly.
 
 ---
 
