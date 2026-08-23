@@ -4,13 +4,36 @@ import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 
-os.environ["SECRET_KEY"]   = "a" * 32
-os.environ["GROQ_API_KEY"] = "test-key-not-real"
-os.environ["DATABASE_URL"] = os.environ.get(
-    "TEST_DATABASE_URL",
-    "postgresql+asyncpg://opsiq:opsiq_dev_password@localhost:5432/opsiq_test",
-)
-os.environ["DB_SCHEMA"] = "opsiq_test"
+os.environ.setdefault("SECRET_KEY", "a" * 32)
+os.environ.setdefault("GROQ_API_KEY", "test-key-not-real")
+
+# DATABASE_URL resolution, in order of trust:
+#
+# 1. If DATABASE_URL is ALREADY set and points at a database literally
+#    named "opsiq_test", trust it as-is. This is what docker-compose.yml's
+#    `tests` service sets (db:5432/opsiq_test) when this file runs inside
+#    the tests container — "localhost" inside that container refers to the
+#    container itself, not the `db` service, so the old hardcoded default
+#    below silently failed to connect there.
+# 2. Otherwise fall back to TEST_DATABASE_URL if explicitly provided.
+# 3. Otherwise fall back to the localhost default — this is the path for
+#    running `pytest tests/test_auth.py` directly on a laptop, where
+#    docker-compose.yml's `ports: ["5432:5432"]` forwards the db
+#    container's Postgres to localhost.
+#
+# We never blindly trust an arbitrary pre-existing DATABASE_URL beyond that
+# "opsiq_test" check — someone's real dev .env could have DATABASE_URL
+# pointed at their actual "opsiq" database, and these tests TRUNCATE
+# tables on every run. Overwriting anything that isn't explicitly the test
+# database is what protects that dev data.
+_existing_db_url = os.environ.get("DATABASE_URL", "")
+if _existing_db_url.rsplit("/", 1)[-1] != "opsiq_test":
+    os.environ["DATABASE_URL"] = os.environ.get(
+        "TEST_DATABASE_URL",
+        "postgresql+asyncpg://opsiq:opsiq_dev_password@localhost:5432/opsiq_test",
+    )
+
+os.environ.setdefault("DB_SCHEMA", "opsiq_test")
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy import text
