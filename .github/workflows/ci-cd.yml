@@ -85,12 +85,21 @@ jobs:
       - name: Create opsiq_test database
         # POSTGRES_DB only creates "opsiq" (the app's real database). Tests
         # need a separate "opsiq_test" database so TRUNCATE calls in
-        # test_auth.py never touch real data. \gexec makes this idempotent —
-        # safe to run even if the database already exists from a previous
-        # step in this same job.
+        # test_auth.py never touch real data.
+        #
+        # A plain check-then-create in bash, rather than psql's \gexec
+        # meta-command — \gexec doesn't reliably survive being passed
+        # through `psql -c "..."` in a non-interactive shell; Postgres
+        # ended up receiving it as literal SQL text instead of a directive,
+        # which is what caused the "syntax error at or near \" failure.
         run: |
-          docker compose exec -T db psql -U opsiq -d opsiq -c \
-            "SELECT 'CREATE DATABASE opsiq_test' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'opsiq_test')\gexec"
+          EXISTS=$(docker compose exec -T db psql -U opsiq -d opsiq -tAc "SELECT 1 FROM pg_database WHERE datname='opsiq_test'")
+          if [ "$EXISTS" != "1" ]; then
+            echo "Creating opsiq_test database..."
+            docker compose exec -T db psql -U opsiq -d opsiq -c "CREATE DATABASE opsiq_test"
+          else
+            echo "opsiq_test already exists, skipping."
+          fi
 
       - name: Run full test suite against the built image
         # `docker compose run` reuses the db container already running from
