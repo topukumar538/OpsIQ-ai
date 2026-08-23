@@ -1,11 +1,5 @@
 name: CI/CD
 
-# Build the real Docker image first, then run the whole test suite inside it
-# against a real Postgres — the same command used locally
-# (`docker compose --profile test run --rm tests`). Testing the built image
-# rather than a bare-runner install is the point: it catches Dockerfile /
-# dependency-layer breakage that a plain `pip install` step would miss, and
-# it's the exact artifact that would go on to run on Hugging Face Spaces.
 on:
   push:
     branches: [master]
@@ -13,20 +7,15 @@ on:
     branches: [master]
 
 jobs:
-
-  # ── Build + full test suite ───────────────────────────────────────────────
   build-and-test:
-    name: Build image & run tests
+    name: Build and Test
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Create .env for CI
-        # docker-compose.yml requires env_file: .env to exist on both the
-        # app and tests services. Real GROQ_API_KEY isn't needed — test_
-        # validation.py falls back to its disk cache, and no other test
-        # calls Groq live. SECRET_KEY just needs to pass Settings'
-        # validator (>=32 chars, no placeholder text, no spaces/quotes).
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create .env
         run: |
           cat <<EOF > .env
           GROQ_API_KEY=${{ secrets.GROQ_API_KEY || 'gsk_ci_placeholder_not_a_real_key' }}
@@ -36,114 +25,47 @@ jobs:
           POSTGRES_DB=opsiq
           EOF
 
-      - name: Set up Docker Buildx
+      - name: Setup Docker
         uses: docker/setup-buildx-action@v3
 
-      - name: Pre-build image with GitHub Actions cache
-        # docker compose build does NOT read from actions/cache on its own —
-        # that earlier attempt was a no-op. This step builds the same
-        # Dockerfile explicitly with BuildKit's GitHub Actions cache backend
-        # (cache-to/cache-from: type=gha), which actually persists across
-        # runs. `load: true` puts the result into the local Docker daemon,
-        # so the `docker compose build` below hits local layer cache instead
-        # of reinstalling torch/sentence-transformers/faiss from scratch.
-        # First run is still slow (nothing to reuse yet) — every run after
-        # this one should be dramatically faster.
-        uses: docker/build-push-action@v5
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Dockerfile
           push: false
           load: true
           tags: opsiq-ai-app:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build app + tests images
-        # Both the "app" and "tests" services in docker-compose.yml build
-        # from the same root Dockerfile. The layers were just warmed above,
-        # so this should resolve almost entirely from local cache.
-        env:
-          DOCKER_BUILDKIT: "1"
-          COMPOSE_DOCKER_CLI_BUILD: "1"
+      - name: Build Compose services
         run: docker compose --profile test build
 
-      - name: Start Postgres
-        # Bring up just the db service and wait for its healthcheck
-        # (pg_isready) to pass before touching it — starting a container
-        # doesn't mean Postgres inside it is ready to accept connections yet.
+      - name: Start PostgreSQL
         run: |
           docker compose up -d db
-          echo "Waiting for Postgres to become healthy..."
+
           timeout 60s bash -c '
             until [ "$(docker inspect -f "{{.State.Health.Status}}" opsiq_db)" = "healthy" ]; do
               sleep 2
             done
           '
-          echo "Postgres is healthy."
 
-      - name: Create opsiq_test database
-        # POSTGRES_DB only creates "opsiq" (the app's real database). Tests
-        # need a separate "opsiq_test" database so TRUNCATE calls in
-        # test_auth.py never touch real data.
-        #
-        # A plain check-then-create in bash, rather than psql's \gexec
-        # meta-command — \gexec doesn't reliably survive being passed
-        # through `psql -c "..."` in a non-interactive shell; Postgres
-        # ended up receiving it as literal SQL text instead of a directive,
-        # which is what caused the "syntax error at or near \" failure.
+      - name: Create test database
         run: |
-          EXISTS=$(docker compose exec -T db psql -U opsiq -d opsiq -tAc "SELECT 1 FROM pg_database WHERE datname='opsiq_test'")
+          EXISTS=$(docker compose exec -T db \
+            psql -U opsiq -d opsiq -tAc \
+            "SELECT 1 FROM pg_database WHERE datname='opsiq_test'")
+
           if [ "$EXISTS" != "1" ]; then
-            echo "Creating opsiq_test database..."
-            docker compose exec -T db psql -U opsiq -d opsiq -c "CREATE DATABASE opsiq_test"
-          else
-            echo "opsiq_test already exists, skipping."
+            docker compose exec -T db \
+              psql -U opsiq -d opsiq \
+              -c "CREATE DATABASE opsiq_test"
           fi
 
-      - name: Run full test suite against the built image
-        # `docker compose run` reuses the db container already running from
-        # the step above (depends_on: service_healthy just confirms it's
-        # ready) rather than starting a second one. Runs `pytest tests/ -v`
-        # inside the tests container — same command as
-        # `docker compose --profile test run --rm tests` locally. Covers
-        # unit tests, live-Postgres auth tests, and the cached validation
-        # suite in one pass.
+      - name: Run tests
         run: docker compose --profile test run --rm tests
 
-      - name: Tear down
+      - name: Cleanup
         if: always()
         run: docker compose down -v
-
-  # ── Deploy to Hugging Face Spaces ─────────────────────────────────────────
-  # DISABLED FOR NOW — focusing on getting CI green first. To re-enable,
-  # delete the "if: false &&" part below so the job goes back to running
-  # automatically on every push to master.
-  deploy:
-    name: Deploy to Hugging Face Space
-    needs: build-and-test
-    if: false && github.event_name == 'push' && github.ref == 'refs/heads/master'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          # Full history, not a shallow clone — a shallow push to the HF
-          # remote can fail or produce a broken ref.
-          fetch-depth: 0
-
-      - name: Push to Hugging Face Space
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_USERNAME: ${{ secrets.HF_USERNAME }}
-          HF_SPACE_NAME: ${{ secrets.HF_SPACE_NAME }}
-        run: |
-          git config --global user.email "actions@github.com"
-          git config --global user.name "GitHub Actions"
-
-          git remote add space "https://${HF_USERNAME}:${HF_TOKEN}@huggingface.co/spaces/${HF_USERNAME}/${HF_SPACE_NAME}"
-
-          # GitHub is the single source of truth; the Space's git history is
-          # just a deploy target and can legitimately diverge (e.g. after a
-          # manual push from a laptop, or the Space's own first commit).
-          # Force-push is intentional here, not a workaround for a mistake.
-          git push space "HEAD:main" --force
