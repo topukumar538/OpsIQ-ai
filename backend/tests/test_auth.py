@@ -96,7 +96,7 @@ async def clean_tables():
 async def client():
     async with AsyncClient(
         transport=ASGITransport(app=auth_app),
-        base_url="http://test",
+        base_url="https://test",
     ) as c:
         yield c
 
