@@ -35,8 +35,11 @@ class Settings(BaseSettings):
     )
 
     # ── LLM ───────────────────────────────────────────────────────────────────
+    # Model availability changes: llama-3.3-70b-versatile moved behind an
+    # enterprise tier and started returning model_not_found on standard keys.
+    # Check https://console.groq.com/docs/models if requests start failing.
     groq_api_key    : str   = ""
-    model_name      : str   = "llama-3.3-70b-versatile"
+    model_name      : str   = "openai/gpt-oss-120b"
     chat_temperature: float = 0.7
     rag_temperature : float = 0.3
     pm_temperature  : float = 0.1
@@ -53,11 +56,11 @@ class Settings(BaseSettings):
     rag_top_k        : int = 4
 
     # ── Upload ────────────────────────────────────────────────────────────────
-    # The practical ceiling is lower than this: a large log produces thousands
-    # of chunks to embed and will exhaust the Groq quota before the analysis
-    # finishes. The upload succeeds; the pipeline then fails with a rate-limit
-    # message.
-    max_upload_size_mb: int = 50
+    # Sized by LLM processing time rather than storage. A larger log produces
+    # thousands of chunks to embed and exhausts the Groq quota before the
+    # analysis finishes — the upload succeeds, then the pipeline fails with a
+    # rate-limit message.
+    max_upload_size_mb: int = 10
 
     # ── Postmortem ────────────────────────────────────────────────────────────
     pm_chunk_lines  : int = 30
@@ -97,11 +100,6 @@ class Settings(BaseSettings):
     # container, where the host is "db" but SSL is off and asyncpg fails with
     # "rejected SSL upgrade" rather than falling back.
     db_ssl      : bool = False
-
-    # ── Misc ──────────────────────────────────────────────────────────────────
-    # Gates /admin/sessions, which lists every in-memory session. There is no
-    # admin role, so this is the gate.
-    debug: bool = False
 
     # ── Validators ────────────────────────────────────────────────────────────
 
@@ -230,7 +228,6 @@ MAX_UPLOAD_SIZE_MB = settings.max_upload_size_mb
 
 # Misc
 ALLOWED_ORIGINS = settings.allowed_origins_list
-DEBUG           = settings.debug
 
 # File type routing
 RAG_EXTENSIONS       = {".pdf", ".docx", ".doc", ".txt"}

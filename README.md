@@ -12,7 +12,7 @@ pinned: false
 
 An AI incident-analysis tool. Upload a production log and get a structured postmortem — errors, timeline, root cause, remediation plan — then ask follow-up questions grounded in the log itself.
 
-**Validated against three real production postmortems** (GitLab 2017, Cloudflare 2019, AWS us-east-1 2020), correctly identifying the root-cause category in all three — including a non-obvious ReDoS → CPU-exhaustion cascade. The validation suite runs from cached results, so it's reproducible without an API key.
+**Regression-tested against three real production postmortems** (GitLab 2017, Cloudflare 2019, AWS us-east-1 2020). Each test runs the full pipeline on a synthetic log reconstructed from the published incident report and checks that the expected technical vocabulary appears in the output. Results are cached to disk, so the suite is reproducible without an API key.
 
 Built with FastAPI, LangGraph, FAISS, and Postgres.
 
@@ -22,21 +22,23 @@ Built with FastAPI, LangGraph, FAISS, and Postgres.
 
 ## Validation
 
-Accuracy measured against synthetic logs reconstructed from published incident reports:
+Three synthetic logs, each reconstructed from a published incident report, run through the full postmortem pipeline. The assertions are keyword-presence checks against the generated report — they catch a pipeline producing empty, generic, or off-topic output, but they do not score reasoning quality or verify that the model's causal explanation is correct.
 
-| Incident | Actual root cause | OpsIQ result |
-| -------- | ----------------- | ------------ |
-| **GitLab 2017** database deletion | Operator error — `rm -rf` on the primary DB | ✅ Identified operator error, database, and the backup gap |
-| **Cloudflare 2019** global outage | ReDoS in a WAF regex rule → CPU exhaustion | ✅ Identified the WAF rule as trigger, CPU exhaustion as mechanism, and the rollback path |
-| **AWS 2020** us-east-1 outage | Kinesis thread exhaustion → cascading failure | ✅ Identified the cascade, thread exhaustion, and 5 affected services |
+| Incident | Actual root cause | What the tests check |
+| -------- | ----------------- | -------------------- |
+| **GitLab 2017** database deletion | Operator error — `rm -rf` on the primary DB | Report mentions human/operator error, the database component, a deletion event, and backup/restore in remediation |
+| **Cloudflare 2019** global outage | ReDoS in a WAF regex rule → CPU exhaustion | Report mentions a resource/CPU term, a WAF or regex term, a deployment/change term, and rollback in remediation |
+| **AWS 2020** us-east-1 outage | Kinesis thread exhaustion → cascading failure | Report mentions cascading failure, a thread/capacity term, at least two affected AWS services, extended duration, and capacity in remediation |
 
-The Cloudflare case is the hardest of the three. A regex backtracking bug starving CPU across a global network is not something you read directly off a log — it has to be inferred from the pattern of what failed and when. OpsIQ surfaced both the trigger and the propagation mechanism.
+Cloudflare is the most demanding of the three: a regex backtracking bug starving CPU across a global network has to be inferred from the pattern of what failed and when, rather than read directly off the log.
 
 ```bash
 cd backend && pytest tests/test_validation.py -v
 ```
 
-Results are cached to disk, so the suite runs without a Groq key and without burning quota. Delete `tests/validation/cache/` to force a fresh run.
+Results are cached to disk, so the suite runs without a Groq key and without burning quota. Delete `tests/validation/cache/` to force a fresh run against the live API.
+
+**What this is and isn't.** This is a regression suite: it will fail loudly if a prompt change, model swap, or pipeline refactor makes the reports stop covering the expected ground. It is not a semantic accuracy benchmark — passing means the right terms appeared, not that the analysis was correct. Judging that still requires reading the reports, which live in `tests/validation/cache/`.
 
 ---
 
@@ -46,7 +48,7 @@ Results are cached to disk, so the suite runs without a Groq key and without bur
 | ---------------- | ------------------------------------- |
 | Backend          | FastAPI, Python 3.12                  |
 | AI orchestration | LangGraph, LangChain                  |
-| LLM              | Groq API (llama-3.3-70b-versatile)    |
+| LLM              | Groq API                              |
 | Embeddings       | HuggingFace all-MiniLM-L6-v2          |
 | Vector store     | FAISS (persisted to disk per session) |
 | Database         | PostgreSQL + SQLAlchemy async         |
@@ -131,7 +133,7 @@ Docker is the supported path. It runs Postgres and the app together, so there's 
 ### Prerequisites
 
 - Docker and Docker Compose v2
-- A Groq API key — [free tier available](https://console.groq.com)
+- A Groq API key — [console.groq.com](https://console.groq.com)
 
 ### 1. Clone and configure
 
@@ -156,6 +158,8 @@ python3 -c "import secrets; print(secrets.token_hex(32))"
 
 The app refuses to start with an empty, short, or placeholder-looking `SECRET_KEY` — the error message prints a freshly generated one you can paste in.
 
+Check [Groq's model list](https://console.groq.com/docs/models) and set `MODEL_NAME` to a model your key can access. Availability and tiers change; a model that worked previously may move behind an enterprise plan.
+
 ### 2. Run
 
 ```bash
@@ -165,6 +169,12 @@ docker compose up --build
 Open **http://localhost:8000**
 
 First build takes a few minutes — it installs torch and bakes the embeddings model into the image so container starts don't depend on Hugging Face being reachable.
+
+If port 8000 or 5432 is already in use on your machine, override them:
+
+```bash
+APP_PORT=8001 DB_PORT=5433 docker compose up --build
+```
 
 ### 3. Stop
 
@@ -201,7 +211,7 @@ docker compose up -d db
 docker compose exec db psql -U opsiq -d opsiq -c "CREATE DATABASE opsiq_test"
 ```
 
-The rest of the suite is pure unit tests with no dependencies:
+The rest of the suite is unit tests with no external dependencies:
 
 ```bash
 # no database needed
@@ -210,11 +220,11 @@ pytest tests/test_tokens.py tests/test_router.py tests/test_ingest.py tests/test
 # needs Postgres (and opsiq_test, created above)
 pytest tests/test_auth.py -v
 
-# accuracy validation — runs from cache, no API key needed
+# postmortem regression suite — runs from cache, no API key needed
 pytest tests/test_validation.py -v
 ```
 
-Or run the whole suite in a container against the same image the app uses — this also creates `opsiq_test` itself, no manual step needed:
+Or run the whole suite in a container against the same image the app uses:
 
 ```bash
 docker compose --profile test build
@@ -227,7 +237,7 @@ docker compose --profile test run --rm tests
 
 ## CI/CD
 
-Every push to `master` builds the app, runs the full test suite against a real Postgres, and — if everything passes — deploys straight to the Hugging Face Space. Defined in `.github/workflows/ci-cd.yml`.
+Every push to `master` builds the app, runs the full test suite against a real Postgres, and — if everything passes — deploys to the Hugging Face Space. Defined in `.github/workflows/ci-cd.yml`.
 
 ```mermaid
 flowchart TD
@@ -265,9 +275,11 @@ flowchart TD
     B4 -.always runs.-> CLEAN[Cleanup<br/>docker compose down -v]
 ```
 
-**Why the image gets built twice.** CI's build is a rehearsal — it proves the `Dockerfile` and code work and runs all 123 tests against the result. Hugging Face's build is the real performance — it builds the same `Dockerfile` independently on its own infrastructure, and that's what actually serves traffic. Since both come from the identical commit, if CI passes, HF's build succeeding is effectively guaranteed.
+**Why the image gets built twice.** CI builds the image and runs the tests inside it. Hugging Face then builds the same `Dockerfile` independently on its own infrastructure, and that build is what serves traffic. Both come from the same commit and `requirements.txt` is pinned, so the two builds should match — but they are separate builds, not the same image moved between machines.
 
-**`opsiq_test` is created directly in the workflow**, not via a local init script — a plain check-then-create in bash (`SELECT ... WHERE datname='opsiq_test'`, then `CREATE DATABASE` if missing) runs after Postgres reports healthy, before tests start. This keeps CI self-contained with no extra files to keep in sync.
+**`opsiq_test` is created directly in the workflow**, not via a local init script — a check-then-create in bash (`SELECT ... WHERE datname='opsiq_test'`, then `CREATE DATABASE` if missing) runs after Postgres reports healthy, before tests start. This keeps CI self-contained with no extra files to keep in sync.
+
+**Docs-only pushes skip CI.** `paths-ignore` covers `**.md`, `docs/**`, `.gitignore`, and `LICENSE`, so a README edit doesn't trigger a full build and deploy.
 
 **Required GitHub secrets** (Settings → Secrets and variables → Actions):
 
@@ -279,7 +291,7 @@ flowchart TD
 | `SECRET_KEY` *(optional)* | Falls back to a CI-only placeholder if unset |
 | `GROQ_API_KEY` *(optional)* | Not required — `test_validation.py` runs from its disk cache |
 
-Runtime secrets for the *live* app (`DATABASE_URL` pointing at the production database, real `SECRET_KEY`, real `GROQ_API_KEY`) are configured separately, directly in the Space's own **Settings → Variables and secrets** on huggingface.co — this workflow only pushes code, it never touches those.
+Runtime secrets for the *live* app (`DATABASE_URL`, `SECRET_KEY`, `GROQ_API_KEY`, `MODEL_NAME`) are configured separately, directly in the Space's own **Settings → Variables and secrets** on huggingface.co. This workflow only pushes code — it never touches those, so changing a model or rotating a key in production is a manual step there.
 
 **Run the same checks locally** before pushing:
 
@@ -333,7 +345,7 @@ OpsIQ-ai/
 │       ├── test_ingest.py       # log parsing and error extraction
 │       ├── test_config.py       # settings validation
 │       ├── test_auth.py         # auth endpoints (needs Postgres)
-│       └── test_validation.py   # postmortem accuracy vs real incidents
+│       └── test_validation.py   # postmortem regression vs real incidents
 └── frontend/
     ├── index.html               # main app
     ├── login.html
@@ -412,27 +424,27 @@ session_messages
 
 ## Design Decisions
 
-**Stateless tokens with a revocation hatch.** Cookies are signed with HMAC-SHA256 and carry a `token_version`. The version is compared against the user row — which is already being fetched for authorisation, so the check is free. Logout bumps it, invalidating every token issued before that moment. Without it, clearing the cookie would leave a captured copy valid for its full 7 days.
+**Stateless tokens with a revocation hatch.** Cookies are signed with HMAC-SHA256 and carry a `token_version`. The version is compared against the user row — which is already being fetched for authorisation, so the check adds no extra query. Logout bumps it, invalidating every token issued before that moment. Without it, clearing the cookie would leave a captured copy valid for its full 7 days.
 
-**Three LLM temperatures per session.** Chat at 0.7 for natural conversation, RAG at 0.3 for document grounding, postmortem at 0.1 for near-deterministic analysis. Separate cached instances, created at session start.
+**Three LLM temperatures per session.** Chat at 0.7 for natural conversation, RAG at 0.3 for document grounding, postmortem at 0.1 for lower-variance analysis. Separate cached instances, created at session start.
 
 **Write-through session cache.** In-memory dict for speed, Postgres as source of truth. Restarts are transparent. TTL eviction drops the memory copy only; disk and DB persist so the session can be restored.
 
 **Parallel LangGraph nodes.** `log_analyzer` and `timeline` have independent inputs and run concurrently. Each returns only its own key — returning a full state dict would let one silently overwrite the other's result.
 
-**FAISS path isolation.** Stores are keyed `{user_id}/{session_token}/{kind}`, and `user_id` comes from the verified auth cookie rather than user input. There is no path from one user's query to another's vectors.
+**FAISS path isolation.** Stores are keyed `{user_id}/{session_token}/{kind}`, and `user_id` comes from the verified auth cookie rather than user input, so a query can't be pointed at another user's vectors.
 
 **Explicit SSL rather than inferred.** `DB_SSL` is a setting, not a guess. An earlier version enabled SSL whenever the DB host wasn't `localhost`, reasoning that anything else must be a cloud provider. That broke the moment Postgres moved into a container, where the host is `db` but SSL is off — asyncpg fails with "rejected SSL upgrade" rather than falling back.
 
-**Blocking pipeline in a thread pool.** LangGraph's `.invoke()` is synchronous. `run_in_executor` keeps it off the event loop so a long postmortem doesn't freeze other users' requests.
+**Blocking pipeline in a thread pool.** LangGraph's `.invoke()` is synchronous. `run_in_executor` keeps it off the event loop so a long postmortem doesn't block other users' requests.
 
 **One postmortem per session.** A session locks after a log is analysed. A report has a single root cause, timeline, and remediation set — merging two unrelated incidents into one report produces incoherent analysis. Multiple incidents mean multiple sessions.
 
-**Session restore on login.** The app reopens whatever session you last had open rather than landing on a blank page. Someone analysing an outage who closes their laptop should pick up where they left off — closer to a debugger than a chat app.
+**Session restore on login.** The app reopens whatever session you last had open rather than landing on a blank page. Someone analysing an outage who closes their laptop should pick up where they left off.
 
 **Request-count rate limits, not token accounting.** The Groq quota is shared across everyone using the deployment, so a per-user cap stops one person exhausting it. Counting requests keeps this to two decorators rather than a usage-tracking table; per-user token accounting would be the next step if the demo saw real traffic. Limits are keyed by IP, so users behind the same network share a budget.
 
-**CI builds the Docker image before testing, not after.** Both `docker compose --profile test build` and the test run itself use the same root `Dockerfile` your Hugging Face Space builds from. Testing that exact artifact — not a bare-runner `pip install` — catches Dockerfile and dependency-layer breakage before it ever reaches production, and mirrors the local dev workflow exactly.
+**CI builds the Docker image before testing.** The tests run inside the same image the `Dockerfile` produces for deployment, so a broken layer or dependency conflict fails in CI rather than at the Hugging Face build step.
 
 ---
 
@@ -446,7 +458,13 @@ session_messages
 
 **Upload limit is 10MB** — sized by LLM processing time rather than storage. A larger log would embed thousands of chunks and exhaust the Groq quota before finishing.
 
-**CI has no caching.** `docker compose --profile test build` rebuilds every dependency layer — including torch and the baked-in embeddings model — from scratch on every run, so builds are consistently slow rather than fast after the first. Traded for a simpler workflow file; re-adding `docker/build-push-action` with a `type=gha` cache would bring this back down significantly.
+**Validation is keyword-based.** The postmortem suite checks that expected terms appear in the generated report. It catches regressions but does not measure whether the analysis is actually correct.
+
+**`--validation-live` does not currently work.** The flag is registered in `conftest.py`, but the hook that reads it lives in `test_validation.py`, where pytest never calls it — so the suite always uses cached results. Delete `tests/validation/cache/` to force a live run in the meantime.
+
+**CI has no build caching.** `docker compose --profile test build` rebuilds every dependency layer — including torch and the baked-in embeddings model — on every run, so builds are consistently slow rather than fast after the first. Traded for a simpler workflow file; adding `docker/build-push-action` with a `type=gha` cache would bring this down.
+
+**The LLM is an external dependency.** Model availability and pricing tiers change without notice. A model that works today can move behind an enterprise plan, which surfaces as a `model_not_found` error at runtime rather than at deploy time.
 
 ---
 
@@ -461,7 +479,7 @@ session_messages
 | `DB_SCHEMA` | `opsiq` | Postgres schema name |
 | `ALLOWED_ORIGINS` | `http://localhost:8000` | Comma-separated CORS origins |
 | `DEBUG` | `false` | Enables `/admin/sessions`; leave off in production |
-| `MODEL_NAME` | `llama-3.3-70b-versatile` | Groq model |
+| `MODEL_NAME` | see `config.py` | Groq model — check availability for your key |
 | `CHAT_TEMPERATURE` | `0.7` | Chat LLM temperature |
 | `RAG_TEMPERATURE` | `0.3` | RAG LLM temperature |
 | `PM_TEMPERATURE` | `0.1` | Postmortem LLM temperature |
@@ -482,4 +500,6 @@ session_messages
 | `SESSION_TTL_SECONDS` | `7200` | Idle eviction from memory |
 | `SESSION_CLEANUP_INTERVAL_SECONDS` | `900` | Cleanup task interval |
 | `FAISS_STORE_DIR` | `/tmp/opsiq_stores` | Vector store directory — mount a volume in production |
-| `PORT` | `8000` | Server port (Hugging Face Spaces requires `7860`) |
+| `APP_PORT` | `8000` | Host port for the app container (dev only) |
+| `DB_PORT` | `5432` | Host port for the Postgres container (dev only) |
+| `PORT` | `8000` | Server port inside the container (Hugging Face Spaces uses `7860`) |
